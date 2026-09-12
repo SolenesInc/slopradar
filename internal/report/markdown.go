@@ -67,10 +67,18 @@ func writeHeadline(w *markdownWriter, result model.Diff) {
 		return
 	}
 	w.line("```diff")
-	w.line("+ %.3f source mass added to functions over CC 10%s", added, contributor(result.Functions, true))
-	w.line("- %.3f source mass removed from functions over CC 10%s", removed, contributor(result.Functions, false))
+	w.line("+ %.3f source mass added to functions over CC 10", added)
+	w.line("- %.3f source mass removed from functions over CC 10", removed)
 	w.line("± %s clone pairs (%d introduced, %d removed)", signed(cloneDelta), len(result.ClonesAdded), len(result.ClonesRemoved))
 	w.line("```")
+	if detail := contributor(result.Functions, true); detail != "" {
+		w.line("")
+		w.line("Largest addition: %s.", detail)
+	}
+	if detail := contributor(result.Functions, false); detail != "" {
+		w.line("")
+		w.line("Largest removal: %s.", detail)
+	}
 }
 
 func writeBucketSummary(w *markdownWriter, result model.Diff) {
@@ -109,7 +117,7 @@ func contributor(functions []model.FunctionDelta, added bool) string {
 	if !added {
 		function = selected.Before
 	}
-	return fmt.Sprintf(" (%s in %s, CC %d, %d lines)", safeText(selected.Name), safeText(selected.File), function.CC, function.SLOC)
+	return fmt.Sprintf("<code>%s</code> in <code>%s</code> (CC %d, %d lines)", markdownInline(selected.Name), markdownInline(selected.File), function.CC, function.SLOC)
 }
 
 func functionBucket(function model.Function) model.Bucket {

@@ -2,10 +2,12 @@
 ## slopradar
 
 ```diff
-+ 44.900 source mass added to functions over CC 10 (complex in source.go, CC 12, 14 lines)
++ 44.900 source mass added to functions over CC 10
 - 0.000 source mass removed from functions over CC 10
 ± +1 clone pairs (1 introduced, 0 removed)
 ```
+
+Largest addition: <code>complex</code> in <code>source.go</code> (CC 12, 14 lines).
 
 | bucket | mass added over CC 10 | mass removed over CC 10 | clone lines in touched files |
 |---|---:|---:|---:|
