@@ -79,18 +79,22 @@ func name(node *sitter.Node, source []byte) string {
 
 func isTestModule(node *sitter.Node, source []byte) bool {
 	if node.Kind() == "attribute_item" {
-		return strings.Contains(strings.Join(strings.Fields(node.Utf8Text(source)), ""), "cfg(test)")
+		return testAttribute(node, source)
 	}
-	if node.Kind() != "mod_item" {
+	if node.Kind() != "mod_item" && node.Kind() != "function_item" {
 		return false
 	}
 	for sibling := node.PrevNamedSibling(); sibling != nil && sibling.Kind() == "attribute_item"; sibling = sibling.PrevNamedSibling() {
-		attribute := strings.Join(strings.Fields(sibling.Utf8Text(source)), "")
-		if strings.Contains(attribute, "cfg(test)") {
+		if testAttribute(sibling, source) {
 			return true
 		}
 	}
 	return false
+}
+
+func testAttribute(node *sitter.Node, source []byte) bool {
+	attribute := strings.Join(strings.Fields(node.Utf8Text(source)), "")
+	return attribute == "#[test]" || strings.Contains(attribute, "cfg(test)")
 }
 
 func text(node *sitter.Node, source []byte) string {

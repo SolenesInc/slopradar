@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/SolenesInc/slopradar/internal/model"
@@ -49,5 +50,66 @@ func TestClassificationCoversPythonDefaults(t *testing.T) {
 	}
 	if got := model.Classify("generated.py", generated, model.Config{}); !got.Generated {
 		t.Fatal("generated Python was not classified")
+	}
+}
+
+func TestDocstringsRequireCapableSuiteAndPlainString(t *testing.T) {
+	source := []byte(`"""module doc"""
+if True:
+    "ordinary block string"
+
+def run():
+    """function doc"""
+    if True:
+        f"executed {side_effect()}"
+
+class Worker:
+    r"""class doc"""
+    def method(self):
+        b"bytes are not docstrings"
+        f"formatted {side_effect()}"
+`)
+	result, err := Analyze("fixture.py", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := make([]int, len(result.Comments))
+	for i, span := range result.Comments {
+		lines[i] = span.StartLine
+	}
+	if want := []int{1, 6, 11}; !reflect.DeepEqual(lines, want) {
+		t.Fatalf("comment lines = %#v, want docstrings %#v", lines, want)
+	}
+	foundSideEffect := false
+	foundBytes := false
+	for _, token := range result.Tokens {
+		foundSideEffect = foundSideEffect || token.Text == "side_effect"
+		foundBytes = foundBytes || strings.HasPrefix(strings.ToLower(token.Text), "b\"")
+	}
+	if !foundSideEffect || !foundBytes {
+		t.Fatalf("ordinary string tokens were removed: %#v", result.Tokens)
+	}
+}
+
+func TestLambdaNamesFollowStructuralOwners(t *testing.T) {
+	source := []byte(`first, second = lambda: 1, lambda: 2
+deeply_wrapped = (((((((lambda: 3)))))))
+register(((((((lambda: 4)))))))
+outer = lambda: (lambda: 5)
+`)
+	result, err := Analyze("fixture.py", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := make([]string, 0, len(result.Functions)+1)
+	for _, function := range result.Functions {
+		names = append(names, function.Name)
+		for _, nested := range function.Nested {
+			names = append(names, nested.Name)
+		}
+	}
+	want := []string{"first", "second", "deeply_wrapped", "cb:register", "outer", "(anonymous)"}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("names = %#v, want %#v", names, want)
 	}
 }

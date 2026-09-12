@@ -48,7 +48,7 @@ type token struct {
 
 func Analyze(file string, source []byte) (lang.Result, error) {
 	extension := path.Ext(file)
-	parserFile := strings.TrimSuffix(file, extension) + strings.ToLower(extension)
+	parserFile := "source" + strings.ToLower(extension)
 	fileBytes := []byte(parserFile)
 	var output C.slopradar_oxc_buffer
 	status := C.slopradar_oxc_analyze(

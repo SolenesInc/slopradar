@@ -62,3 +62,27 @@ func TestClassificationCoversRustDefaults(t *testing.T) {
 		t.Fatal("generated Rust was not classified")
 	}
 }
+
+func TestDirectTestAttributesClassifyFunctionsAndTokens(t *testing.T) {
+	source := []byte(`#[test]
+fn direct_test() {}
+
+#[cfg(test)]
+fn configured_test() {}
+
+fn production() {}
+`)
+	result, err := Analyze("fixture.rs", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantBuckets := []model.Bucket{model.Tests, model.Tests, model.Source}
+	if !reflect.DeepEqual(result.FunctionBuckets, wantBuckets) {
+		t.Fatalf("function buckets = %#v, want %#v", result.FunctionBuckets, wantBuckets)
+	}
+	for _, token := range result.Tokens {
+		if (token.Text == "direct_test" || token.Text == "configured_test") && token.Bucket != model.Tests {
+			t.Fatalf("test token = %#v", token)
+		}
+	}
+}

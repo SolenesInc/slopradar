@@ -59,6 +59,17 @@ func TestAnalyzeAcceptsUppercaseExtensions(t *testing.T) {
 	}
 }
 
+func TestAnalyzeAcceptsNonUTF8UnixFilename(t *testing.T) {
+	file := string([]byte{'s', 'o', 'u', 'r', 'c', 'e', 0xff, '.', 't', 's'})
+	result, err := Analyze(file, []byte("function run() {}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Functions) != 1 || result.Functions[0].File != file {
+		t.Fatalf("functions = %#v", result.Functions)
+	}
+}
+
 func TestAnalyzeEmptyAndInvalidUTF8(t *testing.T) {
 	empty, err := Analyze("empty.ts", nil)
 	if err != nil {

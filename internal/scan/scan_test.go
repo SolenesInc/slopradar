@@ -81,6 +81,25 @@ func TestDirectoryFiltersBeforeReadingContent(t *testing.T) {
 	}
 }
 
+func TestDirectoryIgnoresSymlinkedConfiguration(t *testing.T) {
+	dir := t.TempDir()
+	writeScanFile(t, dir, "source.go", "package fixture\n\nfunc kept() {}\n")
+	external := filepath.Join(t.TempDir(), "external.json")
+	if err := os.WriteFile(external, []byte(`{"excludes":["source.go"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(external, filepath.Join(dir, model.ConfigFile)); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := Directory(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Functions) != 1 || snapshot.Functions[0].Name != "kept" {
+		t.Fatalf("external configuration affected snapshot: %#v", snapshot)
+	}
+}
+
 func TestValidateFormatNamesInvalidValue(t *testing.T) {
 	if err := ValidateFormat("yaml"); err == nil || err.Error() != `format must be json or text, got "yaml"` {
 		t.Fatalf("error = %v", err)
@@ -93,6 +112,18 @@ function broken(`)
 	snapshot, err := Blobs("abc", []gitread.Blob{{BlobInfo: gitread.BlobInfo{Path: "source.ts", Size: int64(len(source))}, Content: source}})
 	if err == nil || !strings.Contains(err.Error(), "parse source.ts: invalid TypeScript or JavaScript syntax") {
 		t.Fatalf("snapshot = %#v, error = %v", snapshot, err)
+	}
+}
+
+func TestBlobsPreservesNonUTF8TypeScriptPath(t *testing.T) {
+	file := string([]byte{'s', 'o', 'u', 'r', 'c', 'e', 0xff, '.', 't', 's'})
+	source := []byte("function run() {}")
+	snapshot, err := Blobs("abc", []gitread.Blob{{BlobInfo: gitread.BlobInfo{Path: file, Size: int64(len(source))}, Content: source}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Functions) != 1 || snapshot.Functions[0].File != file {
+		t.Fatalf("functions = %#v", snapshot.Functions)
 	}
 }
 

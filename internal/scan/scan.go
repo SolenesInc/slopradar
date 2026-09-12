@@ -210,12 +210,15 @@ func withBucket(function model.Function, bucket model.Bucket) model.Function {
 
 func directoryConfig(root string) (model.Config, error) {
 	file := filepath.Join(root, model.ConfigFile)
-	info, err := os.Stat(file)
+	info, err := os.Lstat(file)
 	if errors.Is(err, os.ErrNotExist) {
 		return model.Config{}, nil
 	}
 	if err != nil {
 		return model.Config{}, fmt.Errorf("inspect %s: %w", model.ConfigFile, err)
+	}
+	if !info.Mode().IsRegular() {
+		return model.Config{}, nil
 	}
 	if info.Size() > model.MaxFileBytes {
 		return model.Config{}, fmt.Errorf("read %s: max_file_bytes=%d, asked_bytes=%d", model.ConfigFile, model.MaxFileBytes, info.Size())

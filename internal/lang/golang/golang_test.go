@@ -89,9 +89,9 @@ func classify(value any) int {
         }
     case bool:
         return 3
-    default:
-        return 4
-    }
+	default:
+		return 4
+	}
 }
 `)
 	result, err := Analyze("fixture.go", source)
@@ -100,5 +100,50 @@ func classify(value any) int {
 	}
 	if len(result.Functions) != 1 || result.Functions[0].CC != 4 {
 		t.Fatalf("base plus three non-default clauses: %#v", result.Functions)
+	}
+}
+
+func TestFunctionLiteralNamesFollowStructuralOwners(t *testing.T) {
+	source := []byte(`package fixture
+var first, second = func() {}, func() {}
+
+func outer() {
+    left, right := func() {}, func() {}
+    assigned, assignedField := func() {}, func() {}
+    _ = left
+    _ = right
+    _ = assigned
+    _ = assignedField
+    deeplyWrapped := (((((func() {})))))
+    _ = deeplyWrapped
+    register((((((func() {}))))))
+    immediate := (func() {})()
+    _ = immediate
+    nested := func() func() { return func() {} }
+    _ = nested
+}
+`)
+	result, err := Analyze("fixture.go", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := []string{}
+	var appendNested func([]model.Function)
+	appendNested = func(functions []model.Function) {
+		for _, function := range functions {
+			names = append(names, function.Name)
+			appendNested(function.Nested)
+		}
+	}
+	for _, function := range result.Functions {
+		if function.Name == "outer" {
+			appendNested(function.Nested)
+			continue
+		}
+		names = append(names, function.Name)
+	}
+	want := []string{"first", "second", "left", "right", "assigned", "assignedField", "deeplyWrapped", "cb:register", "immediate", "nested", "(anonymous)"}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("names = %#v, want %#v", names, want)
 	}
 }
