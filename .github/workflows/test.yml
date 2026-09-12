@@ -8,6 +8,21 @@ permissions:
   contents: read
 
 jobs:
+  native-notices:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read Rust toolchain pin
+        id: rust-toolchain
+        shell: bash
+        run: |
+          channel=$(sed -n 's/^channel = "\([^"]*\)"/\1/p' internal/oxc/rust/rust-toolchain.toml)
+          test -n "$channel"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install "${{ steps.rust-toolchain.outputs.channel }}" --profile minimal --component rust-docs
+      - run: python3 scripts/collect-oxc-licenses.py --check
+
   test:
     strategy:
       fail-fast: false
@@ -20,7 +35,6 @@ jobs:
         with:
           go-version: "1.24.x"
       - run: python3 scripts/build-oxc.py --check
-      - run: python3 scripts/collect-oxc-licenses.py --check
       - run: go test -race ./...
       - run: go vet ./...
       - name: Install without Rust or Node

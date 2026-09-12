@@ -12,7 +12,7 @@ project plan:
 | `linux/amd64` | `x86_64-unknown-linux-gnu` | `lib/linux_amd64/provenance.json` |
 
 Compatibility receipt: archives with source SHA-256
-`6689746710f36b452a0900f000f9585e345c6f48647d3e72d216f947d84228bf`
+`2e1fde5f600e7af12f40ddf37d8f00df2c6868bf5b0bfaf4ffc3e01f0a5e5db2`
 linked, passed the Go suite, and ran the CLI with Go `1.24.13` on both
 architectures in `golang:1.24-bookworm`. `ldd --version` in that image reports
 Debian GLIBC `2.36-9+deb12u13`; the linked executable uses libc, libm and
