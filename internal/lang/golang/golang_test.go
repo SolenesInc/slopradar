@@ -75,3 +75,30 @@ func TestConfigRejectsUnknownAndTrailingContent(t *testing.T) {
 		}
 	}
 }
+
+func TestTypeSwitchCountsClausesAndNestedDecisions(t *testing.T) {
+	source := []byte(`package fixture
+func classify(value any) int {
+    switch item := value.(type) {
+    case int, string:
+        switch any(item).(type) {
+        case int:
+            return 1
+        default:
+            return 2
+        }
+    case bool:
+        return 3
+    default:
+        return 4
+    }
+}
+`)
+	result, err := Analyze("fixture.go", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Functions) != 1 || result.Functions[0].CC != 4 {
+		t.Fatalf("base plus three non-default clauses: %#v", result.Functions)
+	}
+}

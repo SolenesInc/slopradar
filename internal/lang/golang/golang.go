@@ -27,7 +27,7 @@ func isFunction(node *sitter.Node) bool {
 
 func decision(node *sitter.Node, source []byte) int {
 	switch node.Kind() {
-	case "if_statement", "for_statement", "expression_case", "communication_case":
+	case "if_statement", "for_statement", "expression_case", "type_case", "communication_case":
 		return 1
 	case "binary_expression":
 		operator := node.ChildByFieldName("operator")
