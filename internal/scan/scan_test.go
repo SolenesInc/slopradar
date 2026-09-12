@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/SolenesInc/slopradar/internal/gitread"
@@ -83,14 +84,11 @@ func TestValidateFormatNamesInvalidValue(t *testing.T) {
 	}
 }
 
-func TestBlobsReportsRecoverableParseErrors(t *testing.T) {
+func TestBlobsRejectsTypeScriptParseErrors(t *testing.T) {
 	source := []byte(`function valid() {}
 function broken(`)
 	snapshot, err := Blobs("abc", []gitread.Blob{{BlobInfo: gitread.BlobInfo{Path: "source.ts", Size: int64(len(source))}, Content: source}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(snapshot.Warnings) != 1 || snapshot.Warnings[0] != "parse source.ts: invalid TypeScript or JavaScript syntax; analyzed recoverable syntax" {
-		t.Fatalf("warnings = %#v", snapshot.Warnings)
+	if err == nil || !strings.Contains(err.Error(), "parse source.ts: invalid TypeScript or JavaScript syntax") {
+		t.Fatalf("snapshot = %#v, error = %v", snapshot, err)
 	}
 }
