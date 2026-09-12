@@ -40,8 +40,40 @@ func TestBlobsBuildsDeterministicBucketsAndSkippedFiles(t *testing.T) {
 	if first.Buckets[model.Source].Functions != 2 || first.Buckets[model.Tests].Functions != 4 {
 		t.Fatalf("buckets = %#v", first.Buckets)
 	}
+	if first.Functions[2].Name != "test_only" || first.Functions[2].Bucket != model.Tests {
+		t.Fatalf("mixed-file test function = %#v", first.Functions[2])
+	}
 	if want := []string{"src/too_large.go"}; !reflect.DeepEqual(first.Skipped, want) {
 		t.Fatalf("skipped = %#v, want %#v", first.Skipped, want)
+	}
+}
+
+func TestDirectoryFiltersBeforeReadingContent(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "node_modules"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name string, data []byte) string {
+		file := filepath.Join(dir, name)
+		if err := os.WriteFile(file, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return file
+	}
+	excluded := write(filepath.Join("node_modules", "unreadable.ts"), []byte("function ignored() {}"))
+	if err := os.Chmod(excluded, 0); err != nil {
+		t.Fatal(err)
+	}
+	large := write("large.go", nil)
+	if err := os.Truncate(large, int64(model.MaxFileBytes)+1); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := Directory(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"large.go"}; !reflect.DeepEqual(snapshot.Skipped, want) {
+		t.Fatalf("skipped = %#v, want %#v", snapshot.Skipped, want)
 	}
 }
 
@@ -53,11 +85,7 @@ func TestValidateFormatNamesInvalidValue(t *testing.T) {
 
 func TestBlobsReportsRecoverableParseErrors(t *testing.T) {
 	source := []byte(`function valid() {}
-const using = "x";
-switch (using) {
-case "x": break;
-}
-function recovered() {}`)
+function broken(`)
 	snapshot, err := Blobs("abc", []gitread.Blob{{BlobInfo: gitread.BlobInfo{Path: "source.ts", Size: int64(len(source))}, Content: source}})
 	if err != nil {
 		t.Fatal(err)

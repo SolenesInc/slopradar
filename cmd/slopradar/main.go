@@ -85,7 +85,7 @@ func writeText(output io.Writer, snapshot model.Snapshot) {
 		totals := snapshot.Buckets[bucket]
 		fmt.Fprintf(output, "%s\t%d\t%.6f\t%.6f\t%.6f\t%d\t%d\t%.6f\n", bucket, totals.Functions, totals.Mass, totals.MassOverCC10, totals.Erosion, totals.SourceLines, totals.CloneLines, totals.CloneShare)
 	}
-	fmt.Fprintln(output, "file\tline\tname\tcc\tsloc\tmass")
+	fmt.Fprintln(output, "file\tline\tbucket\tname\tcc\tsloc\tmass")
 	for _, function := range snapshot.Functions {
 		writeFunction(output, function, "")
 	}
@@ -98,7 +98,7 @@ func writeText(output io.Writer, snapshot model.Snapshot) {
 }
 
 func writeFunction(output io.Writer, function model.Function, prefix string) {
-	fmt.Fprintf(output, "%s\t%d\t%s%s\t%d\t%d\t%.6f\n", function.File, function.Line, prefix, function.Name, function.CC, function.SLOC, function.Mass)
+	fmt.Fprintf(output, "%s\t%d\t%s\t%s%s\t%d\t%d\t%.6f\n", function.File, function.Line, function.Bucket, prefix, function.Name, function.CC, function.SLOC, function.Mass)
 	for _, nested := range function.Nested {
 		writeFunction(output, nested, prefix+">")
 	}

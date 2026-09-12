@@ -12,6 +12,7 @@ const (
 type Function struct {
 	File   string     `json:"file"`
 	Name   string     `json:"name"`
+	Bucket Bucket     `json:"bucket,omitempty"`
 	Line   int        `json:"line"`
 	CC     int        `json:"cc"`
 	SLOC   int        `json:"sloc"`

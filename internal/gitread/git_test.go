@@ -97,6 +97,25 @@ func TestReadDirectoryIsDeterministicAndSkipsSymlinks(t *testing.T) {
 	}
 }
 
+func TestReadDirectoryFilteredDoesNotReadRejectedContent(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "keep.txt", "keep")
+	write(t, dir, "excluded/unreadable.txt", "unreadable")
+	unreadable := filepath.Join(dir, "excluded", "unreadable.txt")
+	if err := os.Chmod(unreadable, 0); err != nil {
+		t.Fatal(err)
+	}
+	blobs, err := ReadDirectoryFiltered(dir, func(path string, _ int64, directory bool) bool {
+		return path != "excluded" || !directory
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blobs) != 1 || blobs[0].Path != "keep.txt" {
+		t.Fatalf("blobs = %#v", blobs)
+	}
+}
+
 func TestOpenPreservesTrailingWhitespaceInRoot(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "trailing ")
 	if err := os.Mkdir(dir, 0o755); err != nil {

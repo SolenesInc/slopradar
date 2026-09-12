@@ -9,6 +9,12 @@ import (
 )
 
 func ReadDirectory(root string) ([]Blob, error) {
+	return ReadDirectoryFiltered(root, nil)
+}
+
+type DirectoryFilter func(path string, size int64, directory bool) bool
+
+func ReadDirectoryFiltered(root string, filter DirectoryFilter) ([]Blob, error) {
 	root, err := filepath.Abs(root)
 	if err != nil {
 		return nil, fmt.Errorf("resolve directory %q: %w", root, err)
@@ -18,19 +24,36 @@ func ReadDirectory(root string) ([]Blob, error) {
 		if walkErr != nil {
 			return walkErr
 		}
-		if entry.Type()&os.ModeSymlink != 0 || !entry.Type().IsRegular() {
+		if path == root {
 			return nil
 		}
 		rel, err := filepath.Rel(root, path)
 		if err != nil {
 			return err
 		}
+		rel = pathSlash(rel)
+		if entry.IsDir() {
+			if filter != nil && !filter(rel, 0, true) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if entry.Type()&os.ModeSymlink != 0 || !entry.Type().IsRegular() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if filter != nil && !filter(rel, info.Size(), false) {
+			return nil
+		}
 		content, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}
 		blobs = append(blobs, Blob{
-			BlobInfo: BlobInfo{Path: pathSlash(rel), Size: int64(len(content))},
+			BlobInfo: BlobInfo{Path: rel, Size: int64(len(content))},
 			Content:  content,
 		})
 		return nil
