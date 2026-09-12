@@ -108,7 +108,16 @@ Built-in exclusions are `vendor/`, `node_modules/`, `dist/`, `target/`, Go
 `testdata/`, and dot directories. Built-in test paths are Go `_test.go` files;
 JavaScript and TypeScript `.test.*`, `.spec.*`, and `__tests__/`; Python
 `test_*.py`, `*_test.py`, and `tests/`; and Rust `tests/` plus `#[cfg(test)]`
-modules and `#[test]` functions.
+items and `#[test]` functions.
+
+Configuration globs use `/` as the path separator on the supported Unix
+platforms. A backslash escapes the next glob character; it is not a separator.
+
+Output keeps ordinary UTF-8 paths unchanged. To represent every Unix filename
+without collisions, path backslashes are written as `\\`, line breaks as `\n`
+or `\r`, tabs as `\t`, other control characters as `\uHHHH`, and invalid UTF-8
+bytes as `\xHH` with uppercase hex digits. Decode those escapes after decoding
+JSON itself; a literal sequence such as `\xFF` is written as `\\xFF`.
 
 Generated files are skipped when a leading comment contains Go's
 `Code generated … DO NOT EDIT.`, `@generated`, or `linguist-generated` marker.

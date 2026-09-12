@@ -36,6 +36,23 @@ func TestParseConfigRejectsMalformedPatterns(t *testing.T) {
 	}
 }
 
+func TestClassifyPreservesUnixBackslashesAndGlobEscapes(t *testing.T) {
+	file := `vendor\main.go`
+	if got := Classify(file, nil, Config{}); got.Excluded {
+		t.Fatalf("literal backslash path classified as vendor directory: %#v", got)
+	}
+	if got := Classify(file, nil, Config{Excludes: []string{"vendor/*.go"}}); got.Excluded {
+		t.Fatalf("slash glob matched literal backslash path: %#v", got)
+	}
+	config, err := ParseConfig([]byte(`{"excludes":["vendor\\\\main.go"]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := Classify(file, nil, config); !got.Excluded {
+		t.Fatalf("escaped literal backslash glob did not match: %#v", got)
+	}
+}
+
 func TestGeneratedMarkersMustAppearInComments(t *testing.T) {
 	content, err := os.ReadFile("classify.go")
 	if err != nil {

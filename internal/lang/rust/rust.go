@@ -81,9 +81,6 @@ func isTestScope(node *sitter.Node, source []byte) bool {
 	if node.Kind() == "attribute_item" {
 		return testAttribute(node, source)
 	}
-	if node.Kind() != "mod_item" && node.Kind() != "function_item" {
-		return false
-	}
 	for sibling := node.PrevNamedSibling(); sibling != nil; sibling = sibling.PrevNamedSibling() {
 		switch sibling.Kind() {
 		case "line_comment", "block_comment":

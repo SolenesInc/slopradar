@@ -52,7 +52,7 @@ func ParseConfig(data []byte) (Config, error) {
 
 func validatePatterns(field string, patterns []string) error {
 	for _, pattern := range patterns {
-		normalized := strings.TrimPrefix(strings.ReplaceAll(pattern, "\\", "/"), "./")
+		normalized := strings.TrimPrefix(pattern, "./")
 		if _, err := path.Match(normalized, ""); err != nil {
 			return fmt.Errorf("parse %s: %s pattern %q: %w", ConfigFile, field, pattern, err)
 		}
@@ -61,7 +61,7 @@ func validatePatterns(field string, patterns []string) error {
 }
 
 func Classify(file string, content []byte, config Config) Classification {
-	file = path.Clean(strings.TrimPrefix(strings.ReplaceAll(file, "\\", "/"), "./"))
+	file = path.Clean(strings.TrimPrefix(file, "./"))
 	if excluded(file, config.Excludes) {
 		return Classification{Excluded: true}
 	}
@@ -111,7 +111,7 @@ func isTest(file string, additions []string) bool {
 
 func matchesAny(file string, patterns []string) bool {
 	for _, pattern := range patterns {
-		pattern = strings.TrimPrefix(strings.ReplaceAll(pattern, "\\", "/"), "./")
+		pattern = strings.TrimPrefix(pattern, "./")
 		if matched, err := path.Match(pattern, file); err == nil && matched {
 			return true
 		}

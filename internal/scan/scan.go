@@ -250,7 +250,7 @@ func revisionConfig(ctx context.Context, repository *gitread.Repository, infos [
 
 func configFrom(blobs []gitread.Blob) (model.Config, error) {
 	for _, blob := range blobs {
-		if path.Clean(strings.ReplaceAll(blob.Path, "\\", "/")) == model.ConfigFile {
+		if path.Clean(blob.Path) == model.ConfigFile {
 			asked := max(blob.Size, int64(len(blob.Content)))
 			if asked > model.MaxFileBytes {
 				return model.Config{}, fmt.Errorf("read %s: max_file_bytes=%d, asked_bytes=%d", model.ConfigFile, model.MaxFileBytes, asked)

@@ -121,6 +121,62 @@ func TestBlobsPreservesNonUTF8TypeScriptPath(t *testing.T) {
 	}
 }
 
+func TestDirectoryAndRevisionPreserveUnixPathBytes(t *testing.T) {
+	if filepath.Separator != '/' {
+		t.Skip("literal backslashes and arbitrary filename bytes are Unix-specific")
+	}
+	dir := t.TempDir()
+	gitForScan(t, dir, "init", "-b", "main")
+	gitForScan(t, dir, "config", "user.name", "Slopradar Test")
+	gitForScan(t, dir, "config", "user.email", "test@slopradar.invalid")
+	backslash := `vendor\main.go`
+	invalidUTF8 := string([]byte{'s', 'o', 'u', 'r', 'c', 'e', 0xff, '.', 'g', 'o'})
+	writeScanFile(t, dir, backslash, "package fixture\n\nfunc backslash() {}\n")
+	assertPaths := func(label string, snapshot model.Snapshot, wantInvalid bool) {
+		t.Helper()
+		got := map[string]bool{}
+		for _, function := range snapshot.Functions {
+			got[function.File] = true
+		}
+		wantCount := 1
+		if wantInvalid {
+			wantCount++
+		}
+		if len(snapshot.Functions) != wantCount || !got[backslash] || got[invalidUTF8] != wantInvalid {
+			t.Fatalf("%s functions = %#v", label, snapshot.Functions)
+		}
+	}
+	directory, err := Directory(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertPaths("directory", directory, false)
+	gitForScan(t, dir, "add", ".")
+	invalidSource := "package fixture\n\nfunc invalidUTF8() {}\n"
+	oid := strings.TrimSpace(gitInputForScan(t, dir, invalidSource, "hash-object", "-w", "--stdin"))
+	gitForScan(t, dir, "update-index", "--add", "--cacheinfo", "100644", oid, invalidUTF8)
+	gitForScan(t, dir, "commit", "-m", "unusual path bytes")
+	revision, err := Revision(context.Background(), dir, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertPaths("revision", revision, true)
+}
+
+func TestBlobsDoesNotTreatBackslashesAsConfigSeparators(t *testing.T) {
+	source := []byte("package fixture\n\nfunc kept() {}\n")
+	snapshot, err := Blobs("abc", []gitread.Blob{
+		{BlobInfo: gitread.BlobInfo{Path: `nested\..\.slopradar.json`, Size: 1}, Content: []byte("{")},
+		{BlobInfo: gitread.BlobInfo{Path: "source.go", Size: int64(len(source))}, Content: source},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Functions) != 1 || snapshot.Functions[0].File != "source.go" {
+		t.Fatalf("functions = %#v", snapshot.Functions)
+	}
+}
+
 func TestRevisionCacheRebindsPathsAndClassifiesAfterLoading(t *testing.T) {
 	dir := t.TempDir()
 	gitForScan(t, dir, "init", "-b", "main")
@@ -200,6 +256,17 @@ func TestRevisionCacheSeparatesTypeScriptDeclarations(t *testing.T) {
 func gitForScan(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, output)
+	}
+	return string(output)
+}
+
+func gitInputForScan(t *testing.T, dir, input string, args ...string) string {
+	t.Helper()
+	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	command.Stdin = strings.NewReader(input)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, output)

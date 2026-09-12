@@ -1,9 +1,11 @@
 package report
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -60,6 +62,97 @@ func TestRenderersEscapeControlAndMarkdownDelimiters(t *testing.T) {
 		if !strings.Contains(got, `\n`) || !strings.Contains(got, `\t`) {
 			t.Fatalf("escaped controls missing from %s output: %q", format, got)
 		}
+	}
+}
+
+func TestRenderersPreserveDistinctPathIdentities(t *testing.T) {
+	invalid := string([]byte{'b', 'a', 'd', 0xff, '.', 'g', 'o'})
+	literalEscape := `bad\xFF.go`
+	unicodePath := "café.go"
+	root := model.NewFunction(invalid, "root", 1, 1, 1, []model.Function{model.NewFunction(literalEscape, "nested", 2, 1, 1, nil)})
+	root.Bucket = model.Source
+	snapshot := model.Snapshot{
+		Functions: []model.Function{root},
+		Clones: []model.ClonePair{{
+			A: model.Range{File: invalid, Start: 1, End: 2},
+			B: model.Range{File: unicodePath, Start: 3, End: 4},
+		}},
+		Buckets:        map[model.Bucket]model.Totals{model.Source: {}, model.Tests: {}},
+		Skipped:        []string{literalEscape},
+		SkippedDetails: []model.SkippedFile{{File: invalid, MaxBytes: 1, AskedBytes: 2}},
+		Warnings:       []string{"parse " + invalid},
+	}
+	wantInvalid := `bad\xFF.go`
+	wantLiteral := `bad\\xFF.go`
+	for _, format := range []string{"md", "text"} {
+		var output strings.Builder
+		if err := WriteSnapshot(&output, format, snapshot, false); err != nil {
+			t.Fatal(err)
+		}
+		got := output.String()
+		for _, want := range []string{wantInvalid, wantLiteral, unicodePath, "parse " + wantInvalid} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("%s output does not contain %q: %q", format, want, got)
+			}
+		}
+	}
+	var output strings.Builder
+	if err := WriteSnapshot(&output, "json", snapshot, false); err != nil {
+		t.Fatal(err)
+	}
+	var decoded model.Snapshot
+	if err := json.Unmarshal([]byte(output.String()), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Functions[0].File != wantInvalid || decoded.Functions[0].Nested[0].File != wantLiteral || decoded.Clones[0].A.File != wantInvalid || decoded.Clones[0].B.File != unicodePath || decoded.Skipped[0] != wantLiteral || decoded.SkippedDetails[0].File != wantInvalid || decoded.Warnings[0] != "parse "+wantInvalid {
+		t.Fatalf("decoded snapshot = %#v", decoded)
+	}
+	if snapshot.Functions[0].File != invalid || snapshot.Functions[0].Nested[0].File != literalEscape {
+		t.Fatalf("serialization mutated source snapshot: %#v", snapshot.Functions)
+	}
+}
+
+func TestSafeTextPathEncodingIsReversible(t *testing.T) {
+	invalid := string([]byte{'b', 'a', 'd', 0xff})
+	for _, test := range []struct {
+		input string
+		want  string
+	}{
+		{input: "café.go", want: "café.go"},
+		{input: "line\nfeed.go", want: `line\nfeed.go`},
+		{input: `line\nfeed.go`, want: `line\\nfeed.go`},
+		{input: invalid, want: `bad\xFF`},
+		{input: `bad\xFF`, want: `bad\\xFF`},
+	} {
+		if got := safeText(test.input); got != test.want {
+			t.Errorf("safeText(%q) = %q, want %q", test.input, got, test.want)
+		}
+	}
+}
+
+func TestDiffJSONSerializesEveryPathField(t *testing.T) {
+	invalid := string([]byte{'b', 'a', 'd', 0xfe, '.', 'g', 'o'})
+	literalEscape := `bad\xFE.go`
+	function := model.NewFunction(invalid, "run", 1, 1, 1, nil)
+	result := model.Diff{
+		Touched:       []string{invalid, literalEscape},
+		Buckets:       map[model.Bucket]model.BucketDelta{model.Source: {}, model.Tests: {}},
+		Functions:     []model.FunctionDelta{{File: invalid, Before: &function, After: &function}},
+		ClonesAdded:   []model.ClonePair{{A: model.Range{File: invalid}, B: model.Range{File: literalEscape}}},
+		ClonesRemoved: []model.ClonePair{{A: model.Range{File: literalEscape}, B: model.Range{File: invalid}}},
+	}
+	var output strings.Builder
+	if err := WriteDiff(&output, "json", result, false); err != nil {
+		t.Fatal(err)
+	}
+	var decoded model.Diff
+	if err := json.Unmarshal([]byte(output.String()), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	wantInvalid := `bad\xFE.go`
+	wantLiteral := `bad\\xFE.go`
+	if !reflect.DeepEqual(decoded.Touched, []string{wantInvalid, wantLiteral}) || decoded.Functions[0].File != wantInvalid || decoded.Functions[0].Before.File != wantInvalid || decoded.Functions[0].After.File != wantInvalid || decoded.ClonesAdded[0].A.File != wantInvalid || decoded.ClonesAdded[0].B.File != wantLiteral || decoded.ClonesRemoved[0].A.File != wantLiteral || decoded.ClonesRemoved[0].B.File != wantInvalid {
+		t.Fatalf("decoded diff = %#v", decoded)
 	}
 }
 

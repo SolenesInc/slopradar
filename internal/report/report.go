@@ -8,6 +8,7 @@ import (
 	"strings"
 	"text/tabwriter"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/SolenesInc/slopradar/internal/model"
 )
@@ -73,7 +74,92 @@ func writeJSON(output io.Writer, value any) error {
 	encoder := json.NewEncoder(output)
 	encoder.SetEscapeHTML(false)
 	encoder.SetIndent("", "  ")
-	return encoder.Encode(value)
+	return encoder.Encode(jsonValue(value))
+}
+
+func jsonValue(value any) any {
+	switch item := value.(type) {
+	case model.Snapshot:
+		return serializedSnapshot(item)
+	case model.Diff:
+		return serializedDiff(item)
+	default:
+		return value
+	}
+}
+
+func serializedSnapshot(snapshot model.Snapshot) model.Snapshot {
+	snapshot.Functions = serializedFunctions(snapshot.Functions)
+	snapshot.Clones = serializedClones(snapshot.Clones)
+	snapshot.Skipped = serializedStrings(snapshot.Skipped)
+	snapshot.SkippedDetails = append([]model.SkippedFile(nil), snapshot.SkippedDetails...)
+	for index := range snapshot.SkippedDetails {
+		snapshot.SkippedDetails[index].File = safeText(snapshot.SkippedDetails[index].File)
+	}
+	snapshot.Warnings = serializedStrings(snapshot.Warnings)
+	return snapshot
+}
+
+func serializedDiff(result model.Diff) model.Diff {
+	result.Touched = serializedStrings(result.Touched)
+	result.Functions = append([]model.FunctionDelta(nil), result.Functions...)
+	for index := range result.Functions {
+		result.Functions[index].File = safeText(result.Functions[index].File)
+		result.Functions[index].Before = serializedFunctionPointer(result.Functions[index].Before)
+		result.Functions[index].After = serializedFunctionPointer(result.Functions[index].After)
+	}
+	result.ClonesAdded = serializedClones(result.ClonesAdded)
+	result.ClonesRemoved = serializedClones(result.ClonesRemoved)
+	return result
+}
+
+func serializedFunctionPointer(function *model.Function) *model.Function {
+	if function == nil {
+		return nil
+	}
+	result := serializedFunction(*function)
+	return &result
+}
+
+func serializedFunctions(functions []model.Function) []model.Function {
+	if functions == nil {
+		return nil
+	}
+	result := make([]model.Function, len(functions))
+	for index, function := range functions {
+		result[index] = serializedFunction(function)
+	}
+	return result
+}
+
+func serializedFunction(function model.Function) model.Function {
+	function.File = safeText(function.File)
+	function.Nested = serializedFunctions(function.Nested)
+	return function
+}
+
+func serializedClones(clones []model.ClonePair) []model.ClonePair {
+	if clones == nil {
+		return nil
+	}
+	result := make([]model.ClonePair, len(clones))
+	copy(result, clones)
+	for index := range result {
+		result[index].A.File = safeText(result[index].A.File)
+		result[index].B.File = safeText(result[index].B.File)
+	}
+	return result
+}
+
+func serializedStrings(values []string) []string {
+	if values == nil {
+		return nil
+	}
+	result := make([]string, len(values))
+	for index, value := range values {
+		result[index] = safeText(value)
+	}
+	return result
 }
 
 type textWriter struct {
@@ -100,7 +186,14 @@ func (w *textWriter) flush() error {
 
 func safeText(value string) string {
 	var result strings.Builder
-	for _, character := range value {
+	result.Grow(len(value))
+	for len(value) != 0 {
+		character, size := utf8.DecodeRuneInString(value)
+		if character == utf8.RuneError && size == 1 {
+			fmt.Fprintf(&result, "\\x%02X", value[0])
+			value = value[1:]
+			continue
+		}
 		switch character {
 		case '\\':
 			result.WriteString("\\\\")
@@ -117,6 +210,7 @@ func safeText(value string) string {
 				result.WriteRune(character)
 			}
 		}
+		value = value[size:]
 	}
 	return result.String()
 }

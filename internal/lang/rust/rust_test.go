@@ -98,3 +98,39 @@ fn configured_test() {}
 		t.Fatalf("test lines = %#v, want %#v", lines[model.Tests], want)
 	}
 }
+
+func TestConfiguredItemsClassifyTheirFunctionsAndHelpersAsTests(t *testing.T) {
+	source := []byte(`fn production() {}
+
+#[cfg(test)]
+impl Widget {
+    fn helper() {
+        let nested = || {
+            if true {}
+        };
+    }
+}
+
+#[cfg(test)]
+const FACTORY: fn() = || {};
+`)
+	result, err := Analyze("fixture.rs", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantBuckets := []model.Bucket{model.Source, model.Tests, model.Tests}
+	if !reflect.DeepEqual(result.FunctionBuckets, wantBuckets) {
+		t.Fatalf("function buckets = %#v, want %#v", result.FunctionBuckets, wantBuckets)
+	}
+	if len(result.Functions) != 3 || len(result.Functions[1].Nested) != 1 || result.Functions[1].Nested[0].Name != "nested" {
+		t.Fatalf("functions = %#v", result.Functions)
+	}
+	if result.Functions[1].CC != 2 || result.Functions[1].Nested[0].CC != 2 {
+		t.Fatalf("folded helper metrics = %#v", result.Functions[1])
+	}
+	for _, token := range result.Tokens {
+		if (token.Text == "helper" || token.Text == "nested" || token.Text == "FACTORY") && token.Bucket != model.Tests {
+			t.Fatalf("token = %#v, want tests bucket", token)
+		}
+	}
+}
