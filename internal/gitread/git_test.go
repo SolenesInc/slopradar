@@ -97,6 +97,46 @@ func TestReadDirectoryIsDeterministicAndSkipsSymlinks(t *testing.T) {
 	}
 }
 
+func TestOpenPreservesTrailingWhitespaceInRoot(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "trailing ")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git(t, dir, "init", "-b", "main")
+	git(t, dir, "config", "user.name", "Slopradar Test")
+	git(t, dir, "config", "user.email", "test@slopradar.invalid")
+	write(t, dir, "a.txt", "content\n")
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-m", "base")
+	repo, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blobs, err := repo.ReadTree(context.Background(), "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blobs) != 1 || string(blobs[0].Content) != "content\n" {
+		t.Fatalf("blobs = %#v", blobs)
+	}
+}
+
+func TestReadBlobsStopsMalformedLargeBatch(t *testing.T) {
+	dir := t.TempDir()
+	git(t, dir, "init", "-b", "main")
+	repo, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	infos := make([]BlobInfo, 10000)
+	for i := range infos {
+		infos[i] = BlobInfo{Path: "missing", OID: "missing"}
+	}
+	if _, err := repo.ReadBlobs(context.Background(), infos); err == nil {
+		t.Fatal("ReadBlobs accepted missing objects")
+	}
+}
+
 func git(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
