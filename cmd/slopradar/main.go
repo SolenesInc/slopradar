@@ -22,10 +22,23 @@ func main() {
 }
 
 func run(ctx context.Context, args []string, output io.Writer) error {
-	if len(args) == 0 || args[0] != "scan" {
-		return errors.New("usage: slopradar scan [<rev>|<dir>] --format json|text")
+	if len(args) == 0 {
+		return errors.New("usage: slopradar <scan|diff|trend> [options]")
 	}
-	target, format, err := scanArgs(args[1:])
+	switch args[0] {
+	case "scan":
+		return runScan(ctx, args[1:], output)
+	case "diff":
+		return runDiff(ctx, args[1:], output)
+	case "trend":
+		return runTrend(ctx, args[1:], output)
+	default:
+		return fmt.Errorf("unknown command %q; usage: slopradar <scan|diff|trend> [options]", args[0])
+	}
+}
+
+func runScan(ctx context.Context, args []string, output io.Writer) error {
+	target, format, err := scanArgs(args)
 	if err != nil {
 		return err
 	}

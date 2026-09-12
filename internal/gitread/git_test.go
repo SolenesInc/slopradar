@@ -66,12 +66,26 @@ func TestRepositoryReadsTreesAndHistory(t *testing.T) {
 	if mergeBase != base {
 		t.Fatalf("merge base = %s, want %s", mergeBase, base)
 	}
+	changed, err := repo.ChangedFiles(context.Background(), base, head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"main.txt", "side.txt"}; !reflect.DeepEqual(changed, want) {
+		t.Fatalf("changed files = %#v, want %#v", changed, want)
+	}
 	merges, err := repo.FirstParentMerges(context.Background(), head, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(merges) != 1 || merges[0].Rev != head || merges[0].Date == "" {
 		t.Fatalf("merges = %#v", merges)
+	}
+	commits, err := repo.FirstParentCommits(context.Background(), head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(commits) != 3 || commits[0].Rev != head || commits[2].Rev != base {
+		t.Fatalf("first-parent commits = %#v", commits)
 	}
 }
 
@@ -137,6 +151,31 @@ func TestOpenPreservesTrailingWhitespaceInRoot(t *testing.T) {
 	}
 	if len(blobs) != 1 || string(blobs[0].Content) != "content\n" {
 		t.Fatalf("blobs = %#v", blobs)
+	}
+}
+
+func TestChangedFilesTreatsRenameAsRemovedAndAdded(t *testing.T) {
+	dir := t.TempDir()
+	git(t, dir, "init", "-b", "main")
+	git(t, dir, "config", "user.name", "Slopradar Test")
+	git(t, dir, "config", "user.email", "test@slopradar.invalid")
+	write(t, dir, "old.go", "package fixture\n\nfunc moved() {}\n")
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-m", "base")
+	base := strings.TrimSpace(git(t, dir, "rev-parse", "HEAD"))
+	git(t, dir, "mv", "old.go", "new.go")
+	git(t, dir, "commit", "-m", "rename")
+	head := strings.TrimSpace(git(t, dir, "rev-parse", "HEAD"))
+	repository, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, err := repository.ChangedFiles(context.Background(), base, head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"new.go", "old.go"}; !reflect.DeepEqual(changed, want) {
+		t.Fatalf("changed files = %#v, want %#v", changed, want)
 	}
 }
 

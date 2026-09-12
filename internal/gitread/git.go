@@ -25,10 +25,12 @@ type Blob struct {
 	Content []byte
 }
 
-type Merge struct {
+type Commit struct {
 	Rev  string
 	Date string
 }
+
+type Merge = Commit
 
 type Repository struct {
 	dir string
@@ -191,8 +193,36 @@ func (r *Repository) MergeBase(ctx context.Context, base, head string) (string, 
 	return strings.TrimSpace(string(out)), nil
 }
 
+func (r *Repository) ChangedFiles(ctx context.Context, base, head string) ([]string, error) {
+	out, err := gitOutput(ctx, r.dir, "diff", "--no-renames", "--name-only", "-z", base, head, "--")
+	if err != nil {
+		return nil, err
+	}
+	fields := bytes.Split(out, []byte{0})
+	files := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if len(field) != 0 {
+			files = append(files, string(field))
+		}
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
 func (r *Repository) FirstParentMerges(ctx context.Context, rev string, limit int) ([]Merge, error) {
-	args := []string{"log", "--first-parent", "--merges", "-z", "--format=%H%x00%cI"}
+	return r.firstParentHistory(ctx, rev, limit, true)
+}
+
+func (r *Repository) FirstParentCommits(ctx context.Context, rev string) ([]Commit, error) {
+	return r.firstParentHistory(ctx, rev, 0, false)
+}
+
+func (r *Repository) firstParentHistory(ctx context.Context, rev string, limit int, mergesOnly bool) ([]Commit, error) {
+	args := []string{"log", "--first-parent"}
+	if mergesOnly {
+		args = append(args, "--merges")
+	}
+	args = append(args, "-z", "--format=%H%x00%cI")
 	if limit > 0 {
 		args = append(args, "--max-count="+strconv.Itoa(limit))
 	}
@@ -202,17 +232,17 @@ func (r *Repository) FirstParentMerges(ctx context.Context, rev string, limit in
 		return nil, err
 	}
 	fields := bytes.Split(out, []byte{0})
-	merges := make([]Merge, 0, len(fields)/2)
+	commits := make([]Commit, 0, len(fields)/2)
 	for len(fields) > 0 && len(fields[len(fields)-1]) == 0 {
 		fields = fields[:len(fields)-1]
 	}
 	if len(fields)%2 != 0 {
-		return nil, fmt.Errorf("git log returned an invalid merge record")
+		return nil, fmt.Errorf("git log returned an invalid first-parent history record")
 	}
 	for i := 0; i < len(fields); i += 2 {
-		merges = append(merges, Merge{Rev: string(fields[i]), Date: string(fields[i+1])})
+		commits = append(commits, Commit{Rev: string(fields[i]), Date: string(fields[i+1])})
 	}
-	return merges, nil
+	return commits, nil
 }
 
 func gitOutput(ctx context.Context, dir string, args ...string) ([]byte, error) {

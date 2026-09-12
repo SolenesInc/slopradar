@@ -67,6 +67,43 @@ type Snapshot struct {
 	Warnings       []string          `json:"warnings"`
 }
 
+type FunctionDelta struct {
+	File      string    `json:"file"`
+	Name      string    `json:"name"`
+	Before    *Function `json:"before"`
+	After     *Function `json:"after"`
+	DeltaMass float64   `json:"delta_mass"`
+	Note      string    `json:"note"`
+}
+
+type BucketDelta struct {
+	MassAddedOverCC10       float64 `json:"mass_added_over_cc_10"`
+	MassRemovedOverCC10     float64 `json:"mass_removed_over_cc_10"`
+	ErosionBefore           float64 `json:"erosion_before"`
+	ErosionAfter            float64 `json:"erosion_after"`
+	CloneShareBefore        float64 `json:"clone_share_before"`
+	CloneShareAfter         float64 `json:"clone_share_after"`
+	CloneLinesTouchedBefore int     `json:"clone_lines_touched_before"`
+	CloneLinesTouchedAfter  int     `json:"clone_lines_touched_after"`
+}
+
+type Diff struct {
+	Base          string                 `json:"base"`
+	Head          string                 `json:"head"`
+	Touched       []string               `json:"touched"`
+	Buckets       map[Bucket]BucketDelta `json:"buckets"`
+	Functions     []FunctionDelta        `json:"functions"`
+	ClonesAdded   []ClonePair            `json:"clones_added"`
+	ClonesRemoved []ClonePair            `json:"clones_removed"`
+	Trend         []TrendPoint           `json:"trend"`
+}
+
+type TrendPoint struct {
+	Rev     string            `json:"rev"`
+	Date    string            `json:"date"`
+	Buckets map[Bucket]Totals `json:"buckets"`
+}
+
 func NewFunction(file, name string, line, cc, sloc int, nested []Function) Function {
 	return Function{
 		File: file, Name: name, Line: line, CC: cc, SLOC: sloc,
