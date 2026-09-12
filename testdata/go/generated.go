@@ -5,4 +5,3 @@ package fixture
 func generated() int {
 	return 1
 }
-

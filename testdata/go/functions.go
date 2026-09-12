@@ -20,7 +20,6 @@ func top(value int) int {
 		return -1
 	}
 }
-
 func (Server) Serve(values []int) {
 	for range values {
 		select {
@@ -29,4 +28,3 @@ func (Server) Serve(values []int) {
 		}
 	}
 }
-
