@@ -224,12 +224,7 @@ func maximalPairs(segments []segment, byLanguage map[string][]int, languages []s
 		for _, groups := range windows {
 			for _, group := range groups {
 				groupCandidates := leftMaximalPairs(segments, group.occurrences)
-				if len(groupCandidates) > JscpdDefaultMinimumTokens {
-					for _, pair := range groupCandidates {
-						indexedSegments[pair.left.segment] = true
-						indexedSegments[pair.right.segment] = true
-					}
-				}
+				markSharedExtensionSegments(groupCandidates, indexedSegments)
 				candidates = append(candidates, groupCandidates...)
 			}
 		}
@@ -255,6 +250,21 @@ func maximalPairs(segments []segment, byLanguage map[string][]int, languages []s
 		pairs = append(pairs, pair)
 	}
 	return pairs, index
+}
+
+func markSharedExtensionSegments(pairs []occurrencePair, marked []bool) {
+	uses := map[occurrence]int{}
+	for _, pair := range pairs {
+		uses[pair.left]++
+		uses[pair.right]++
+	}
+	for _, pair := range pairs {
+		if uses[pair.left] == 1 && uses[pair.right] == 1 {
+			continue
+		}
+		marked[pair.left.segment] = true
+		marked[pair.right.segment] = true
+	}
 }
 
 func exactWindows(segments []segment, segmentIndexes []int) map[uint64][]exactWindowGroup {

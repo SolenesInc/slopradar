@@ -158,9 +158,6 @@ func exhaustiveDetect(input []File) Result {
 	files := normalizeFiles(input)
 	segments := buildSegments(files)
 	active := make([]bool, len(segments))
-	for segment := range active {
-		active[segment] = true
-	}
 	index := newLexicalIndex(segments, active)
 	byLanguage := map[string][]int{}
 	for index, item := range segments {
