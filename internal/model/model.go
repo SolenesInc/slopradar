@@ -43,12 +43,20 @@ type Totals struct {
 	CloneShare   float64 `json:"clone_share"`
 }
 
+type SkippedFile struct {
+	File       string `json:"file"`
+	MaxBytes   int64  `json:"max_bytes"`
+	AskedBytes int64  `json:"asked_bytes"`
+}
+
 type Snapshot struct {
-	Rev       string            `json:"rev"`
-	Functions []Function        `json:"functions"`
-	Clones    []ClonePair       `json:"clones"`
-	Buckets   map[Bucket]Totals `json:"buckets"`
-	Skipped   []string          `json:"skipped"`
+	Rev            string            `json:"rev"`
+	Functions      []Function        `json:"functions"`
+	Clones         []ClonePair       `json:"clones"`
+	Buckets        map[Bucket]Totals `json:"buckets"`
+	Skipped        []string          `json:"skipped"`
+	SkippedDetails []SkippedFile     `json:"skipped_details"`
+	Warnings       []string          `json:"warnings"`
 }
 
 func NewFunction(file, name string, line, cc, sloc int, nested []Function) Function {

@@ -107,7 +107,25 @@ func matchesAny(file string, patterns []string) bool {
 }
 
 func generated(content []byte) bool {
-	lower := bytes.ToLower(content)
-	return bytes.Contains(content, []byte("Code generated ")) && bytes.Contains(content, []byte(" DO NOT EDIT.")) ||
-		bytes.Contains(lower, []byte("@generated")) || bytes.Contains(lower, []byte("linguist-generated"))
+	for _, line := range bytes.Split(content, []byte{'\n'}) {
+		trimmed := bytes.TrimSpace(line)
+		if !generatedComment(trimmed) {
+			continue
+		}
+		lower := bytes.ToLower(trimmed)
+		if bytes.Contains(trimmed, []byte("Code generated ")) && bytes.Contains(trimmed, []byte(" DO NOT EDIT.")) ||
+			bytes.Contains(lower, []byte("@generated")) || bytes.Contains(lower, []byte("linguist-generated")) {
+			return true
+		}
+	}
+	return false
+}
+
+func generatedComment(line []byte) bool {
+	for _, prefix := range [][]byte{[]byte("//"), []byte("#"), []byte("/*"), []byte("*"), []byte("<!--")} {
+		if bytes.HasPrefix(line, prefix) {
+			return true
+		}
+	}
+	return false
 }

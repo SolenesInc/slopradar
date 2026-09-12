@@ -78,6 +78,9 @@ func name(node *sitter.Node, source []byte) string {
 }
 
 func isTestModule(node *sitter.Node, source []byte) bool {
+	if node.Kind() == "attribute_item" {
+		return strings.Contains(strings.Join(strings.Fields(node.Utf8Text(source)), ""), "cfg(test)")
+	}
 	if node.Kind() != "mod_item" {
 		return false
 	}

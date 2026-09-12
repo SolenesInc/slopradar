@@ -175,6 +175,14 @@ func (r *Repository) ReadTree(ctx context.Context, rev string) ([]Blob, error) {
 	return r.ReadBlobs(ctx, infos)
 }
 
+func (r *Repository) ResolveRevision(ctx context.Context, rev string) (string, error) {
+	out, err := gitOutput(ctx, r.dir, "rev-parse", "--verify", rev+"^{commit}")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(string(out), "\n"), nil
+}
+
 func (r *Repository) MergeBase(ctx context.Context, base, head string) (string, error) {
 	out, err := gitOutput(ctx, r.dir, "merge-base", base, head)
 	if err != nil {

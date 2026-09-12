@@ -28,6 +28,7 @@ type Result struct {
 	Comments        []Span
 	Tokens          []Token
 	TestSpans       []Span
+	Warnings        []string
 }
 
 type Rules struct {
@@ -59,10 +60,10 @@ func Analyze(file string, source []byte, rules Rules) (Result, error) {
 	}
 	defer tree.Close()
 	root := tree.RootNode()
+	result := Result{Functions: []model.Function{}, FunctionBuckets: []model.Bucket{}, Comments: []Span{}, Tokens: []Token{}, TestSpans: []Span{}, Warnings: []string{}}
 	if root.HasError() {
-		return Result{}, fmt.Errorf("parse %s: %s", file, rules.ParseError)
+		result.Warnings = append(result.Warnings, fmt.Sprintf("parse %s: %s; analyzed recoverable syntax", file, rules.ParseError))
 	}
-	result := Result{Functions: []model.Function{}, FunctionBuckets: []model.Bucket{}, Comments: []Span{}, Tokens: []Token{}, TestSpans: []Span{}}
 	collectLexical(root, source, rules, model.Source, &result)
 	var roots []*candidate
 	collectFunctions(root, source, rules, model.Source, nil, &roots)
@@ -155,4 +156,40 @@ func countSLOC(source []byte, start, end int, comments []Span) int {
 		}
 	}
 	return count
+}
+
+func CountLines(source []byte, comments, testSpans []Span) map[model.Bucket]int {
+	content := append([]byte(nil), source...)
+	for _, comment := range comments {
+		for i := comment.StartByte; i < comment.EndByte; i++ {
+			if content[i] != '\n' && content[i] != '\r' {
+				content[i] = ' '
+			}
+		}
+	}
+	counts := map[model.Bucket]int{model.Source: 0, model.Tests: 0}
+	lineStart := 0
+	for lineStart <= len(content) {
+		lineEnd := bytes.IndexByte(content[lineStart:], '\n')
+		if lineEnd < 0 {
+			lineEnd = len(content)
+		} else {
+			lineEnd += lineStart
+		}
+		if len(bytes.TrimSpace(content[lineStart:lineEnd])) != 0 {
+			bucket := model.Source
+			for _, span := range testSpans {
+				if lineStart < span.EndByte && lineEnd >= span.StartByte {
+					bucket = model.Tests
+					break
+				}
+			}
+			counts[bucket]++
+		}
+		if lineEnd == len(content) {
+			break
+		}
+		lineStart = lineEnd + 1
+	}
+	return counts
 }
