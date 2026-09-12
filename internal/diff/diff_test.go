@@ -51,18 +51,38 @@ func TestBuildSeparatesMassAndAnnotatesEveryFunctionChange(t *testing.T) {
 	}
 }
 
-func TestBuildMatchesRepeatedNamesByLineOrder(t *testing.T) {
+func TestBuildPreservesRepeatedNameMetricMatchesBeforePairingChanges(t *testing.T) {
 	base := snapshot("base", []model.Function{
 		functionAt("same.go", "(anonymous)", model.Source, 10, 2, 4),
 		functionAt("same.go", "(anonymous)", model.Source, 30, 3, 4),
 	}, model.Totals{}, model.Totals{})
 	head := snapshot("head", []model.Function{
-		functionAt("same.go", "(anonymous)", model.Source, 12, 4, 4),
-		functionAt("same.go", "(anonymous)", model.Source, 32, 5, 4),
+		functionAt("same.go", "(anonymous)", model.Source, 5, 4, 4),
+		functionAt("same.go", "(anonymous)", model.Source, 12, 2, 4),
+		functionAt("same.go", "(anonymous)", model.Source, 32, 3, 4),
 	}, model.Totals{}, model.Totals{})
 	got := build(t, base, head, []string{"same.go"})
-	if len(got.Functions) != 2 || got.Functions[0].Before.Line != 10 || got.Functions[0].After.Line != 12 || got.Functions[1].Before.Line != 30 || got.Functions[1].After.Line != 32 {
+	if len(got.Functions) != 1 || got.Functions[0].Before != nil || got.Functions[0].After.Line != 5 || got.Functions[0].Note != "new" {
 		t.Fatalf("deltas = %#v", got.Functions)
+	}
+	removed := build(t, head, base, []string{"same.go"})
+	if len(removed.Functions) != 1 || removed.Functions[0].Before.Line != 5 || removed.Functions[0].After != nil || removed.Functions[0].Note != "removed" {
+		t.Fatalf("removed deltas = %#v", removed.Functions)
+	}
+}
+
+func TestBuildExpandsConfigTouchToChangedAnalysisPaths(t *testing.T) {
+	base := snapshot("base", []model.Function{function("included.go", "high", model.Source, 12, 25)}, model.Totals{}, model.Totals{})
+	base.AnalysisPaths = []model.AnalysisPath{{File: "included.go", Bucket: model.Source}, {File: "stable.go", Bucket: model.Source}}
+	head := snapshot("head", []model.Function{function("included.go", "high", model.Tests, 12, 25)}, model.Totals{}, model.Totals{})
+	head.AnalysisPaths = []model.AnalysisPath{{File: "included.go", Bucket: model.Tests}, {File: "new.go", Bucket: model.Source}, {File: "stable.go", Bucket: model.Source}}
+	got := build(t, base, head, []string{model.ConfigFile})
+	want := []string{model.ConfigFile, "included.go", "new.go"}
+	if !reflect.DeepEqual(got.Touched, want) {
+		t.Fatalf("touched = %#v, want %#v", got.Touched, want)
+	}
+	if got.Buckets[model.Source].MassRemovedOverCC10 != 60 || got.Buckets[model.Tests].MassAddedOverCC10 != 60 {
+		t.Fatalf("bucket deltas = %#v", got.Buckets)
 	}
 }
 

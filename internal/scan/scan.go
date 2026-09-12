@@ -117,7 +117,7 @@ func blobsWithConfig(rev string, blobs []gitread.Blob, config model.Config, skip
 	blobs = append([]gitread.Blob(nil), blobs...)
 	sort.Slice(blobs, func(i, j int) bool { return blobs[i].Path < blobs[j].Path })
 	snapshot := model.Snapshot{
-		Rev: rev, Functions: []model.Function{}, Clones: []model.ClonePair{}, CloneCoverage: []model.CloneCoverage{},
+		Rev: rev, Functions: []model.Function{}, Clones: []model.ClonePair{}, CloneCoverage: []model.CloneCoverage{}, AnalysisPaths: []model.AnalysisPath{},
 		Buckets: map[model.Bucket]model.Totals{model.Source: {}, model.Tests: {}}, Skipped: []string{}, SkippedDetails: append([]model.SkippedFile(nil), skipped...), Warnings: []string{},
 	}
 	for _, item := range skipped {
@@ -139,6 +139,7 @@ func blobsWithConfig(rev string, blobs []gitread.Blob, config model.Config, skip
 		if !ok {
 			continue
 		}
+		snapshot.AnalysisPaths = append(snapshot.AnalysisPaths, model.AnalysisPath{File: blob.Path, Bucket: classification.Bucket})
 		result, found := cache.Get(blob.OID, analyze.dialect, blob.Path)
 		if !found {
 			analyzed, err := analyze.run(blob.Path, blob.Content)

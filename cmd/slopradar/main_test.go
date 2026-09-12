@@ -179,6 +179,52 @@ func TestDiffRejectsHeadThatCrossesFileSizeTripwire(t *testing.T) {
 	}
 }
 
+func TestDiffReportsConfigOnlyExclusionAndBucketChanges(t *testing.T) {
+	dir := t.TempDir()
+	gitCommand(t, dir, "init", "-b", "main")
+	gitCommand(t, dir, "config", "user.name", "Slopradar Test")
+	gitCommand(t, dir, "config", "user.email", "test@slopradar.invalid")
+	writeFile(t, dir, "configured.go", cc12Source()+duplicateA())
+	writeFile(t, dir, "peer.go", "package fixture\n"+duplicateB())
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "base")
+	base := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+
+	writeFile(t, dir, model.ConfigFile, `{"excludes":["configured.go"]}`)
+	gitCommand(t, dir, "add", model.ConfigFile)
+	gitCommand(t, dir, "commit", "-m", "exclude configured source")
+	excluded := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+
+	writeFile(t, dir, model.ConfigFile, `{"test_globs":["configured.go"]}`)
+	gitCommand(t, dir, "add", model.ConfigFile)
+	gitCommand(t, dir, "commit", "-m", "move configured source to tests")
+	tests := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+
+	t.Chdir(dir)
+	wantTouched := []string{model.ConfigFile, "configured.go"}
+	excludedDiff := commandDiff(t, base, excluded)
+	if !reflect.DeepEqual(excludedDiff.Touched, wantTouched) {
+		t.Fatalf("excluded touched = %#v, want %#v", excludedDiff.Touched, wantTouched)
+	}
+	assertFunctionNotes(t, excludedDiff, map[string]string{"complex": "removed", "duplicateA": "removed"})
+	complexMass := functionByName(t, excludedDiff, "complex").Before.Mass
+	excludedSource := excludedDiff.Buckets[model.Source]
+	if excludedSource.MassRemovedOverCC10 != complexMass || excludedSource.CloneLinesTouchedBefore == 0 || excludedSource.CloneLinesTouchedAfter != 0 || len(excludedDiff.ClonesRemoved) != 1 || len(excludedDiff.ClonesAdded) != 0 {
+		t.Fatalf("excluded diff = %#v", excludedDiff)
+	}
+
+	bucketDiff := commandDiff(t, base, tests)
+	if !reflect.DeepEqual(bucketDiff.Touched, wantTouched) {
+		t.Fatalf("bucket touched = %#v, want %#v", bucketDiff.Touched, wantTouched)
+	}
+	assertFunctionNotes(t, bucketDiff, map[string]string{"complex": "", "duplicateA": ""})
+	source := bucketDiff.Buckets[model.Source]
+	testBucket := bucketDiff.Buckets[model.Tests]
+	if source.MassRemovedOverCC10 != complexMass || testBucket.MassAddedOverCC10 != complexMass || source.CloneLinesTouchedBefore == 0 || source.CloneLinesTouchedAfter != 0 || testBucket.CloneLinesTouchedBefore != 0 || testBucket.CloneLinesTouchedAfter != source.CloneLinesTouchedBefore || len(bucketDiff.ClonesAdded) != 0 || len(bucketDiff.ClonesRemoved) != 0 {
+		t.Fatalf("bucket diff = %#v", bucketDiff)
+	}
+}
+
 func TestTrendArgsRequireOnePositiveSelector(t *testing.T) {
 	for _, args := range [][]string{{}, {"--merges", "0"}, {"--months", "2", "--merges", "2"}} {
 		if _, err := parseTrendArgs(args); err == nil {
@@ -235,6 +281,36 @@ func TestDiffTracksFunctionLifecycleAcrossThrowawayCommits(t *testing.T) {
 	assertFunctionNotes(t, deletedDiff, map[string]string{"duplicateB": "removed"})
 	if len(deletedDiff.ClonesAdded) != 0 || len(deletedDiff.ClonesRemoved) != 1 || deletedDiff.ClonesRemoved[0].ID != addedDiff.ClonesAdded[0].ID || deletedDiff.Buckets[model.Source].CloneLinesTouchedBefore != 26 || deletedDiff.Buckets[model.Source].CloneLinesTouchedAfter != 0 {
 		t.Fatalf("removed clone delta = %#v", deletedDiff)
+	}
+}
+
+func TestDiffPreservesRepeatedFunctionsWhenOneIsInsertedAndRemoved(t *testing.T) {
+	dir := t.TempDir()
+	gitCommand(t, dir, "init", "-b", "main")
+	gitCommand(t, dir, "config", "user.name", "Slopradar Test")
+	gitCommand(t, dir, "config", "user.email", "test@slopradar.invalid")
+	writeFile(t, dir, "repeated.go", repeatedInitSource(false))
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "base")
+	base := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+
+	writeFile(t, dir, "repeated.go", repeatedInitSource(true))
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "insert init")
+	head := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+	writeFile(t, dir, "repeated.go", repeatedInitSource(false))
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "remove init")
+	removedHead := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+
+	t.Chdir(dir)
+	inserted := commandDiff(t, base, head)
+	if len(inserted.Functions) != 1 || inserted.Functions[0].Name != "init" || inserted.Functions[0].Before != nil || inserted.Functions[0].After.CC != 4 || inserted.Functions[0].Note != "new" {
+		t.Fatalf("inserted repeated function diff = %#v", inserted.Functions)
+	}
+	removed := commandDiff(t, head, removedHead)
+	if len(removed.Functions) != 1 || removed.Functions[0].Name != "init" || removed.Functions[0].Before.CC != 4 || removed.Functions[0].After != nil || removed.Functions[0].Note != "removed" {
+		t.Fatalf("removed repeated function diff = %#v", removed.Functions)
 	}
 }
 
@@ -391,6 +467,27 @@ func duplicateB(value int) int {
 	value = value + 9
 	value = value + 10
 	return value
+}
+`
+}
+
+func repeatedInitSource(inserted bool) string {
+	newFunction := ""
+	if inserted {
+		newFunction = `func init() {
+	if first() {}
+	if second() {}
+	if third() {}
+}
+
+`
+	}
+	return `package fixture
+
+` + newFunction + `func init() {}
+
+func init() {
+	if existing() {}
 }
 `
 }

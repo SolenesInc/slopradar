@@ -20,7 +20,7 @@ func Build(base, head model.Snapshot, touched []string) (model.Diff, error) {
 	if err := model.ValidateComplete(head); err != nil {
 		return model.Diff{}, fmt.Errorf("head snapshot: %w", err)
 	}
-	touched = append([]string(nil), touched...)
+	touched = analysisTouchedPaths(base, head, touched)
 	sort.Strings(touched)
 	touchedSet := make(map[string]struct{}, len(touched))
 	for _, file := range touched {
@@ -62,8 +62,7 @@ func Build(base, head model.Snapshot, touched []string) (model.Diff, error) {
 		return keys[i].name < keys[j].name
 	})
 	for _, key := range keys {
-		before := baseFunctions[key]
-		after := headFunctions[key]
+		before, after := changedFunctions(baseFunctions[key], headFunctions[key])
 		count := max(len(before), len(after))
 		for i := 0; i < count; i++ {
 			var baseFunction, headFunction *model.Function
@@ -108,6 +107,82 @@ func Build(base, head model.Snapshot, touched []string) (model.Diff, error) {
 		result.Buckets[bucket] = delta
 	}
 	return result, nil
+}
+
+func analysisTouchedPaths(base, head model.Snapshot, touched []string) []string {
+	result := append([]string(nil), touched...)
+	if !containsPath(result, model.ConfigFile) {
+		return result
+	}
+	basePaths := analysisPathBuckets(base.AnalysisPaths)
+	headPaths := analysisPathBuckets(head.AnalysisPaths)
+	seen := make(map[string]struct{}, len(result)+len(basePaths)+len(headPaths))
+	for _, file := range result {
+		seen[file] = struct{}{}
+	}
+	for file, before := range basePaths {
+		after, exists := headPaths[file]
+		if exists && before == after {
+			continue
+		}
+		if _, exists := seen[file]; !exists {
+			seen[file] = struct{}{}
+			result = append(result, file)
+		}
+	}
+	for file := range headPaths {
+		if _, existed := basePaths[file]; existed {
+			continue
+		}
+		if _, exists := seen[file]; !exists {
+			seen[file] = struct{}{}
+			result = append(result, file)
+		}
+	}
+	return result
+}
+
+func containsPath(paths []string, target string) bool {
+	for _, item := range paths {
+		if item == target {
+			return true
+		}
+	}
+	return false
+}
+
+func analysisPathBuckets(paths []model.AnalysisPath) map[string]model.Bucket {
+	result := make(map[string]model.Bucket, len(paths))
+	for _, item := range paths {
+		result[item.File] = item.Bucket
+	}
+	return result
+}
+
+func changedFunctions(before, after []model.Function) ([]model.Function, []model.Function) {
+	matchedAfter := make([]bool, len(after))
+	changedBefore := make([]model.Function, 0, len(before))
+	for _, baseFunction := range before {
+		matched := false
+		for i := range after {
+			if matchedAfter[i] || !equalFunctionMetrics(&baseFunction, &after[i]) {
+				continue
+			}
+			matchedAfter[i] = true
+			matched = true
+			break
+		}
+		if !matched {
+			changedBefore = append(changedBefore, baseFunction)
+		}
+	}
+	changedAfter := make([]model.Function, 0, len(after))
+	for i, headFunction := range after {
+		if !matchedAfter[i] {
+			changedAfter = append(changedAfter, headFunction)
+		}
+	}
+	return changedBefore, changedAfter
 }
 
 func groupFunctions(functions []model.Function, touched map[string]struct{}) map[functionKey][]model.Function {

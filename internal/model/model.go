@@ -41,6 +41,11 @@ type CloneCoverage struct {
 	Lines  []int
 }
 
+type AnalysisPath struct {
+	File   string
+	Bucket Bucket
+}
+
 type Totals struct {
 	Functions    int     `json:"functions"`
 	Mass         float64 `json:"mass"`
@@ -62,6 +67,7 @@ type Snapshot struct {
 	Functions      []Function        `json:"functions"`
 	Clones         []ClonePair       `json:"clones"`
 	CloneCoverage  []CloneCoverage   `json:"-"`
+	AnalysisPaths  []AnalysisPath    `json:"-"`
 	Buckets        map[Bucket]Totals `json:"buckets"`
 	Skipped        []string          `json:"skipped"`
 	SkippedDetails []SkippedFile     `json:"skipped_details"`
