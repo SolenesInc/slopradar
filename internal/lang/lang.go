@@ -3,7 +3,6 @@ package lang
 import (
 	"bytes"
 	"fmt"
-	"sort"
 
 	sitter "github.com/tree-sitter/go-tree-sitter"
 
@@ -18,14 +17,17 @@ type Span struct {
 }
 
 type Token struct {
-	Text string `json:"text"`
-	Line int    `json:"line"`
+	Text   string       `json:"text"`
+	Line   int          `json:"line"`
+	Bucket model.Bucket `json:"bucket"`
 }
 
 type Result struct {
-	Functions []model.Function
-	Comments  []Span
-	Tokens    []Token
+	Functions       []model.Function
+	FunctionBuckets []model.Bucket
+	Comments        []Span
+	Tokens          []Token
+	TestSpans       []Span
 }
 
 type Rules struct {
@@ -34,12 +36,14 @@ type Rules struct {
 	Name       func(*sitter.Node, []byte) string
 	Decision   func(*sitter.Node, []byte) int
 	Comment    func(*sitter.Node, []byte) bool
+	TestScope  func(*sitter.Node, []byte) bool
 	ParseError string
 }
 
 type candidate struct {
 	node     *sitter.Node
 	name     string
+	bucket   model.Bucket
 	children []*candidate
 }
 
@@ -58,26 +62,22 @@ func Analyze(file string, source []byte, rules Rules) (Result, error) {
 	if root.HasError() {
 		return Result{}, fmt.Errorf("parse %s: %s", file, rules.ParseError)
 	}
-	result := Result{Functions: []model.Function{}, Comments: []Span{}, Tokens: []Token{}}
-	collectLexical(root, source, rules, &result)
+	result := Result{Functions: []model.Function{}, FunctionBuckets: []model.Bucket{}, Comments: []Span{}, Tokens: []Token{}, TestSpans: []Span{}}
+	collectLexical(root, source, rules, model.Source, &result)
 	var roots []*candidate
-	collectFunctions(root, source, rules, nil, &roots)
+	collectFunctions(root, source, rules, model.Source, nil, &roots)
 	for _, root := range roots {
 		result.Functions = append(result.Functions, buildFunction(file, source, rules, result.Comments, root))
+		result.FunctionBuckets = append(result.FunctionBuckets, root.bucket)
 	}
-	sort.Slice(result.Functions, func(i, j int) bool {
-		if result.Functions[i].File != result.Functions[j].File {
-			return result.Functions[i].File < result.Functions[j].File
-		}
-		if result.Functions[i].Line != result.Functions[j].Line {
-			return result.Functions[i].Line < result.Functions[j].Line
-		}
-		return result.Functions[i].Name < result.Functions[j].Name
-	})
 	return result, nil
 }
 
-func collectLexical(node *sitter.Node, source []byte, rules Rules, result *Result) {
+func collectLexical(node *sitter.Node, source []byte, rules Rules, bucket model.Bucket, result *Result) {
+	if rules.TestScope != nil && rules.TestScope(node, source) {
+		bucket = model.Tests
+		result.TestSpans = append(result.TestSpans, spanOf(node))
+	}
 	if rules.Comment(node, source) {
 		result.Comments = append(result.Comments, spanOf(node))
 		return
@@ -85,19 +85,22 @@ func collectLexical(node *sitter.Node, source []byte, rules Rules, result *Resul
 	if node.ChildCount() == 0 {
 		text := node.Utf8Text(source)
 		if len(bytes.TrimSpace([]byte(text))) != 0 {
-			result.Tokens = append(result.Tokens, Token{Text: text, Line: int(node.StartPosition().Row) + 1})
+			result.Tokens = append(result.Tokens, Token{Text: text, Line: int(node.StartPosition().Row) + 1, Bucket: bucket})
 		}
 		return
 	}
 	for i := uint(0); i < node.ChildCount(); i++ {
-		collectLexical(node.Child(i), source, rules, result)
+		collectLexical(node.Child(i), source, rules, bucket, result)
 	}
 }
 
-func collectFunctions(node *sitter.Node, source []byte, rules Rules, parent *candidate, roots *[]*candidate) {
+func collectFunctions(node *sitter.Node, source []byte, rules Rules, bucket model.Bucket, parent *candidate, roots *[]*candidate) {
+	if rules.TestScope != nil && rules.TestScope(node, source) {
+		bucket = model.Tests
+	}
 	current := parent
 	if rules.Function(node) {
-		current = &candidate{node: node, name: rules.Name(node, source)}
+		current = &candidate{node: node, name: rules.Name(node, source), bucket: bucket}
 		if parent == nil {
 			*roots = append(*roots, current)
 		} else {
@@ -105,7 +108,7 @@ func collectFunctions(node *sitter.Node, source []byte, rules Rules, parent *can
 		}
 	}
 	for i := uint(0); i < node.NamedChildCount(); i++ {
-		collectFunctions(node.NamedChild(i), source, rules, current, roots)
+		collectFunctions(node.NamedChild(i), source, rules, bucket, current, roots)
 	}
 }
 
