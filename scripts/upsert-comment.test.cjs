@@ -16,7 +16,12 @@ function issueAPI() {
         issues: {
           listComments: async () => ({data: comments}),
           createComment: async ({body}) => {
-            const comment = {id: "slopradar-comment", body, html_url: "https://example.invalid/comment"}
+            const comment = {
+              id: "slopradar-comment",
+              body,
+              html_url: "https://example.invalid/comment",
+              user: {login: "github-actions[bot]", type: "Bot"},
+            }
             comments.push(comment)
             return {data: comment}
           },
@@ -38,11 +43,17 @@ function pullRequestContext(headRepository = "SolenesInc/slopradar") {
   }
 }
 
-test("creates and then updates the marker comment", async (t) => {
+test("preserves a human marker and creates then updates the bot marker", async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "slopradar-comment-"))
   t.after(() => fs.rmSync(directory, {recursive: true}))
   const reportPath = path.join(directory, "report.md")
   const api = issueAPI()
+  api.comments.push({
+    id: "human-comment",
+    body: "<!-- slopradar -->\nhuman-authored note\n",
+    html_url: "https://example.invalid/human-comment",
+    user: {login: "victor", type: "User"},
+  })
   const messages = []
   const core = {info: (message) => messages.push(message)}
 
@@ -51,8 +62,9 @@ test("creates and then updates the marker comment", async (t) => {
   fs.writeFileSync(reportPath, "<!-- slopradar -->\nupdated report\n")
   await upsertComment({github: api.github, context: pullRequestContext(), core, reportPath, commentEnabled: "true"})
 
-  assert.equal(api.comments.length, 1)
-  assert.equal(api.comments[0].body, "<!-- slopradar -->\nupdated report\n")
+  assert.equal(api.comments.length, 2)
+  assert.equal(api.comments[0].body, "<!-- slopradar -->\nhuman-authored note\n")
+  assert.equal(api.comments[1].body, "<!-- slopradar -->\nupdated report\n")
   assert.deepEqual(messages, [
     "slopradar comment created: https://example.invalid/comment",
     "slopradar comment updated: https://example.invalid/comment",

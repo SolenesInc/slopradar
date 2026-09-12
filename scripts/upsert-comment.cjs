@@ -44,7 +44,9 @@ module.exports = async function upsertComment({
   }
   try {
     const comments = await github.paginate(github.rest.issues.listComments, request)
-    const existing = comments.find((comment) => comment.body?.startsWith(marker))
+    const existing = comments.find(
+      (comment) => comment.user?.login === "github-actions[bot]" && comment.body?.startsWith(marker),
+    )
 
     if (existing) {
       await github.rest.issues.updateComment({

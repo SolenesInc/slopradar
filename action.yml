@@ -54,10 +54,11 @@ runs:
       env:
         COMMENT_ENABLED: ${{ inputs.comment }}
         REPORT_PATH: ${{ steps.report.outputs.path }}
+        SLOPRADAR_ACTION_PATH: ${{ github.action_path }}
       with:
         github-token: ${{ github.token }}
         script: |
-          const upsertComment = require(`${process.env.GITHUB_ACTION_PATH}/scripts/upsert-comment.cjs`)
+          const upsertComment = require(`${process.env.SLOPRADAR_ACTION_PATH}/scripts/upsert-comment.cjs`)
           await upsertComment({
             github,
             context,
