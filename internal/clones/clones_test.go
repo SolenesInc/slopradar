@@ -118,10 +118,105 @@ func TestDetectDoesNotNormalizeTokens(t *testing.T) {
 	}
 }
 
+func TestDetectMatchesExhaustiveReference(t *testing.T) {
+	repeated := periodicTokens([]string{";"}, 1, 120)
+	mixedBlock := periodicTokens([]string{"a", "b", "a", "c", "a", "b", "d"}, 1, 84)
+	mixedSameFile := append([]lang.Token(nil), mixedBlock...)
+	mixedSameFile = append(mixedSameFile, lang.Token{Text: "separator", Line: len(mixedSameFile) + 1, Bucket: model.Source})
+	mixedSameFile = append(mixedSameFile, periodicTokens([]string{"a", "b", "a", "c", "a", "b", "d"}, len(mixedSameFile)+1, 84)...)
+	cases := map[string][]File{
+		"repeated token in one file": {
+			{Path: "same.js", Language: "javascript", Tokens: repeated, SourceLines: lineRange(model.Source, 1, len(repeated))},
+		},
+		"mixed period in one file": {
+			{Path: "mixed.go", Language: "go", Tokens: mixedSameFile, SourceLines: lineRange(model.Source, 1, len(mixedSameFile))},
+		},
+		"repeated token across files": {
+			{Path: "a.py", Language: "python", Tokens: repeated, SourceLines: lineRange(model.Source, 1, len(repeated))},
+			{Path: "b.py", Language: "python", Tokens: periodicTokens([]string{";"}, 201, len(repeated)), SourceLines: lineRange(model.Source, 201, 200+len(repeated))},
+		},
+		"mixed period across files": {
+			{Path: "a.rs", Language: "rust", Tokens: mixedBlock, SourceLines: lineRange(model.Source, 1, len(mixedBlock))},
+			{Path: "b.rs", Language: "rust", Tokens: periodicTokens([]string{"a", "b", "a", "c", "a", "b", "d"}, 101, len(mixedBlock)), SourceLines: lineRange(model.Source, 101, 100+len(mixedBlock))},
+		},
+	}
+	for name, files := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := Detect(files)
+			want := exhaustiveDetect(files)
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("optimized result differs from exhaustive reference\ngot:  %#v\nwant: %#v", got, want)
+			}
+			if len(got.Pairs) == 0 {
+				t.Fatal("fixture produced no clone pairs")
+			}
+		})
+	}
+}
+
+func exhaustiveDetect(input []File) Result {
+	files := normalizeFiles(input)
+	segments := buildSegments(files)
+	active := make([]bool, len(segments))
+	for segment := range active {
+		active[segment] = true
+	}
+	index := newLexicalIndex(segments, active)
+	byLanguage := map[string][]int{}
+	for index, item := range segments {
+		byLanguage[files[item.file].Language] = append(byLanguage[files[item.file].Language], index)
+	}
+	seen := map[extentPair]struct{}{}
+	extents := []extentPair{}
+	for _, segmentIndexes := range byLanguage {
+		windows := map[uint64][]occurrence{}
+		for _, segmentIndex := range segmentIndexes {
+			item := segments[segmentIndex]
+			if len(item.tokens) < JscpdDefaultMinimumTokens {
+				continue
+			}
+			hash, power := firstWindow(item.tokens)
+			windows[hash] = append(windows[hash], occurrence{segment: segmentIndex})
+			for start := 1; start+JscpdDefaultMinimumTokens <= len(item.tokens); start++ {
+				hash = nextWindow(hash, tokenHash(item.tokens[start-1].Text), tokenHash(item.tokens[start+JscpdDefaultMinimumTokens-1].Text), power)
+				windows[hash] = append(windows[hash], occurrence{segment: segmentIndex, start: start})
+			}
+		}
+		for _, occurrences := range windows {
+			for left := range occurrences {
+				for right := left + 1; right < len(occurrences); right++ {
+					a, b := occurrences[left], occurrences[right]
+					if !equalWindow(segments[a.segment].tokens[a.start:], segments[b.segment].tokens[b.start:]) {
+						continue
+					}
+					pair, ok := maximalPair(segments, a, b)
+					if !ok {
+						continue
+					}
+					if _, exists := seen[pair]; exists {
+						continue
+					}
+					seen[pair] = struct{}{}
+					extents = append(extents, pair)
+				}
+			}
+		}
+	}
+	return buildResult(files, segments, extents, index)
+}
+
 func numberedTokens(text string, firstLine, count int) []lang.Token {
 	tokens := make([]lang.Token, count)
 	for i := range tokens {
 		tokens[i] = lang.Token{Text: fmt.Sprintf("%s-%d", text, i), Line: firstLine + i, Bucket: model.Source}
+	}
+	return tokens
+}
+
+func periodicTokens(pattern []string, firstLine, count int) []lang.Token {
+	tokens := make([]lang.Token, count)
+	for index := range tokens {
+		tokens[index] = lang.Token{Text: pattern[index%len(pattern)], Line: firstLine + index, Bucket: model.Source}
 	}
 	return tokens
 }

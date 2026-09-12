@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"hash/fnv"
+	"math/bits"
 	"sort"
 	"strings"
 
@@ -42,6 +43,48 @@ type occurrence struct {
 	start   int
 }
 
+type occurrencePair struct {
+	left  occurrence
+	right occurrence
+}
+
+type exactWindowGroup struct {
+	occurrences []occurrence
+}
+
+type predecessorGroup struct {
+	occurrences []occurrence
+}
+
+type rankPair struct {
+	left  int
+	right int
+}
+
+type lexicalIndex struct {
+	ranks  [][][]int
+	active []bool
+}
+
+type sequenceKey struct {
+	length int
+	left   int
+	right  int
+}
+
+type pairSequenceKey struct {
+	fileA    string
+	fileB    string
+	sequence sequenceKey
+}
+
+type pairIDRequest struct {
+	pairIndex int
+	fileA     string
+	fileB     string
+	sequence  extent
+}
+
 type extent struct {
 	segment int
 	start   int
@@ -54,6 +97,22 @@ type extentPair struct {
 }
 
 func Detect(input []File) Result {
+	files := normalizeFiles(input)
+	segments := buildSegments(files)
+	byLanguage := map[string][]int{}
+	for i, item := range segments {
+		byLanguage[files[item.file].Language] = append(byLanguage[files[item.file].Language], i)
+	}
+	languages := make([]string, 0, len(byLanguage))
+	for language := range byLanguage {
+		languages = append(languages, language)
+	}
+	sort.Strings(languages)
+	extents, index := maximalPairs(segments, byLanguage, languages)
+	return buildResult(files, segments, extents, index)
+}
+
+func normalizeFiles(input []File) []File {
 	files := append([]File(nil), input...)
 	for i := range files {
 		lines := map[model.Bucket][]int{model.Source: {}, model.Tests: {}}
@@ -69,70 +128,30 @@ func Detect(input []File) Result {
 		}
 		return files[i].Language < files[j].Language
 	})
+	return files
+}
+
+func buildResult(files []File, segments []segment, extents []extentPair, index lexicalIndex) Result {
 	result := Result{
 		Pairs:    []model.ClonePair{},
 		Coverage: []model.CloneCoverage{},
 		Lines:    map[string]map[model.Bucket][]int{},
 		Total:    map[model.Bucket]int{model.Source: 0, model.Tests: 0},
 	}
-	lineSets := map[string]map[model.Bucket]map[int]struct{}{}
+	cloneRanges := map[string][]model.Range{}
 	for _, file := range files {
-		lineSets[file.Path] = map[model.Bucket]map[int]struct{}{
-			model.Source: {},
-			model.Tests:  {},
-		}
+		cloneRanges[file.Path] = []model.Range{}
 	}
 
-	segments := buildSegments(files)
-	byLanguage := map[string][]int{}
-	for i, item := range segments {
-		byLanguage[files[item.file].Language] = append(byLanguage[files[item.file].Language], i)
-	}
-	languages := make([]string, 0, len(byLanguage))
-	for language := range byLanguage {
-		languages = append(languages, language)
-	}
-	sort.Strings(languages)
-	seen := map[extentPair]struct{}{}
-	for _, language := range languages {
-		windows := map[uint64][]occurrence{}
-		for _, segmentIndex := range byLanguage[language] {
-			item := segments[segmentIndex]
-			if len(item.tokens) < JscpdDefaultMinimumTokens {
-				continue
-			}
-			hash, power := firstWindow(item.tokens)
-			windows[hash] = append(windows[hash], occurrence{segment: segmentIndex})
-			for start := 1; start+JscpdDefaultMinimumTokens <= len(item.tokens); start++ {
-				hash = nextWindow(hash, tokenHash(item.tokens[start-1].Text), tokenHash(item.tokens[start+JscpdDefaultMinimumTokens-1].Text), power)
-				windows[hash] = append(windows[hash], occurrence{segment: segmentIndex, start: start})
-			}
+	ids := pairIDs(files, segments, extents, index)
+	for pairIndex, pair := range extents {
+		clonePair := makePair(files, segments, pair, ids[pairIndex])
+		if clonePair.Lines < JscpdDefaultMinimumLines {
+			continue
 		}
-		for _, occurrences := range windows {
-			for i := range occurrences {
-				for j := i + 1; j < len(occurrences); j++ {
-					left, right := occurrences[i], occurrences[j]
-					if !equalWindow(segments[left.segment].tokens[left.start:], segments[right.segment].tokens[right.start:]) {
-						continue
-					}
-					pair, ok := maximalPair(segments, left, right)
-					if !ok {
-						continue
-					}
-					if _, exists := seen[pair]; exists {
-						continue
-					}
-					seen[pair] = struct{}{}
-					clonePair := makePair(files, segments, pair)
-					if clonePair.Lines < JscpdDefaultMinimumLines {
-						continue
-					}
-					result.Pairs = append(result.Pairs, clonePair)
-					markLines(files, segments, pair.a, clonePair.A, lineSets)
-					markLines(files, segments, pair.b, clonePair.B, lineSets)
-				}
-			}
-		}
+		result.Pairs = append(result.Pairs, clonePair)
+		cloneRanges[clonePair.A.File] = append(cloneRanges[clonePair.A.File], clonePair.A)
+		cloneRanges[clonePair.B.File] = append(cloneRanges[clonePair.B.File], clonePair.B)
 	}
 
 	sort.Slice(result.Pairs, func(i, j int) bool { return pairLess(result.Pairs[i], result.Pairs[j]) })
@@ -141,11 +160,9 @@ func Detect(input []File) Result {
 			continue
 		}
 		result.Lines[file.Path] = map[model.Bucket][]int{model.Source: {}, model.Tests: {}}
+		ranges := unionRanges(cloneRanges[file.Path])
 		for _, bucket := range []model.Bucket{model.Source, model.Tests} {
-			for line := range lineSets[file.Path][bucket] {
-				result.Lines[file.Path][bucket] = append(result.Lines[file.Path][bucket], line)
-			}
-			sort.Ints(result.Lines[file.Path][bucket])
+			result.Lines[file.Path][bucket] = linesInRanges(file.SourceLines[bucket], ranges)
 			result.Total[bucket] += len(result.Lines[file.Path][bucket])
 		}
 		if len(result.Lines[file.Path][model.Source])+len(result.Lines[file.Path][model.Tests]) != 0 {
@@ -157,6 +174,244 @@ func Detect(input []File) Result {
 		}
 	}
 	return result
+}
+
+func unionRanges(ranges []model.Range) []model.Range {
+	if len(ranges) == 0 {
+		return nil
+	}
+	ranges = append([]model.Range(nil), ranges...)
+	sort.Slice(ranges, func(i, j int) bool {
+		if ranges[i].Start != ranges[j].Start {
+			return ranges[i].Start < ranges[j].Start
+		}
+		return ranges[i].End < ranges[j].End
+	})
+	union := []model.Range{ranges[0]}
+	for _, item := range ranges[1:] {
+		last := &union[len(union)-1]
+		if item.Start <= last.End {
+			last.End = max(last.End, item.End)
+			continue
+		}
+		union = append(union, item)
+	}
+	return union
+}
+
+func linesInRanges(sourceLines []int, ranges []model.Range) []int {
+	lines := []int{}
+	rangeIndex := 0
+	for _, line := range sourceLines {
+		for rangeIndex < len(ranges) && ranges[rangeIndex].End < line {
+			rangeIndex++
+		}
+		if rangeIndex == len(ranges) {
+			return lines
+		}
+		if ranges[rangeIndex].Start <= line {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+func maximalPairs(segments []segment, byLanguage map[string][]int, languages []string) ([]extentPair, lexicalIndex) {
+	candidates := []occurrencePair{}
+	indexedSegments := make([]bool, len(segments))
+	for _, language := range languages {
+		windows := exactWindows(segments, byLanguage[language])
+		for _, groups := range windows {
+			for _, group := range groups {
+				groupCandidates := leftMaximalPairs(segments, group.occurrences)
+				if len(groupCandidates) > JscpdDefaultMinimumTokens {
+					for _, pair := range groupCandidates {
+						indexedSegments[pair.left.segment] = true
+						indexedSegments[pair.right.segment] = true
+					}
+				}
+				candidates = append(candidates, groupCandidates...)
+			}
+		}
+	}
+	index := newLexicalIndex(segments, indexedSegments)
+	seen := map[extentPair]struct{}{}
+	pairs := []extentPair{}
+	for _, candidate := range candidates {
+		var pair extentPair
+		var ok bool
+		if index.active[candidate.left.segment] && index.active[candidate.right.segment] {
+			pair, ok = leftMaximalPair(segments, index, candidate.left, candidate.right)
+		} else {
+			pair, ok = maximalPair(segments, candidate.left, candidate.right)
+		}
+		if !ok {
+			continue
+		}
+		if _, exists := seen[pair]; exists {
+			continue
+		}
+		seen[pair] = struct{}{}
+		pairs = append(pairs, pair)
+	}
+	return pairs, index
+}
+
+func exactWindows(segments []segment, segmentIndexes []int) map[uint64][]exactWindowGroup {
+	windows := map[uint64][]exactWindowGroup{}
+	for _, segmentIndex := range segmentIndexes {
+		item := segments[segmentIndex]
+		if len(item.tokens) < JscpdDefaultMinimumTokens {
+			continue
+		}
+		hash, power := firstWindow(item.tokens)
+		windows[hash] = addExactWindow(segments, windows[hash], occurrence{segment: segmentIndex})
+		for start := 1; start+JscpdDefaultMinimumTokens <= len(item.tokens); start++ {
+			hash = nextWindow(hash, tokenHash(item.tokens[start-1].Text), tokenHash(item.tokens[start+JscpdDefaultMinimumTokens-1].Text), power)
+			windows[hash] = addExactWindow(segments, windows[hash], occurrence{segment: segmentIndex, start: start})
+		}
+	}
+	return windows
+}
+
+func newLexicalIndex(segments []segment, active []bool) lexicalIndex {
+	textRanks := map[string]int{}
+	base := make([][]int, len(segments))
+	maxTokens := 0
+	for segmentIndex, item := range segments {
+		if !active[segmentIndex] {
+			continue
+		}
+		base[segmentIndex] = make([]int, len(item.tokens))
+		maxTokens = max(maxTokens, len(item.tokens))
+		for tokenIndex, token := range item.tokens {
+			rank, exists := textRanks[token.Text]
+			if !exists {
+				rank = len(textRanks) + 1
+				textRanks[token.Text] = rank
+			}
+			base[segmentIndex][tokenIndex] = rank
+		}
+	}
+	index := lexicalIndex{ranks: [][][]int{base}, active: active}
+	for width := 2; width <= maxTokens; width *= 2 {
+		half := width / 2
+		pairRanks := map[rankPair]int{}
+		level := make([][]int, len(segments))
+		for segmentIndex, item := range segments {
+			if !active[segmentIndex] {
+				continue
+			}
+			count := len(item.tokens) - width + 1
+			if count <= 0 {
+				continue
+			}
+			level[segmentIndex] = make([]int, count)
+			previous := index.ranks[len(index.ranks)-1][segmentIndex]
+			for start := range level[segmentIndex] {
+				key := rankPair{left: previous[start], right: previous[start+half]}
+				rank, exists := pairRanks[key]
+				if !exists {
+					rank = len(pairRanks) + 1
+					pairRanks[key] = rank
+				}
+				level[segmentIndex][start] = rank
+			}
+		}
+		index.ranks = append(index.ranks, level)
+	}
+	return index
+}
+
+func (index lexicalIndex) commonPrefix(segments []segment, a, b occurrence) int {
+	matched := 0
+	for level := len(index.ranks) - 1; level >= 0; level-- {
+		width := 1 << level
+		aStart := a.start + matched
+		bStart := b.start + matched
+		if aStart+width > len(segments[a.segment].tokens) || bStart+width > len(segments[b.segment].tokens) {
+			continue
+		}
+		if index.ranks[level][a.segment][aStart] == index.ranks[level][b.segment][bStart] {
+			matched += width
+		}
+	}
+	return matched
+}
+
+func (index lexicalIndex) sequence(item extent) sequenceKey {
+	length := item.end - item.start
+	level := bits.Len(uint(length)) - 1
+	width := 1 << level
+	return sequenceKey{
+		length: length,
+		left:   index.ranks[level][item.segment][item.start],
+		right:  index.ranks[level][item.segment][item.end-width],
+	}
+}
+
+func addExactWindow(segments []segment, groups []exactWindowGroup, item occurrence) []exactWindowGroup {
+	for index := range groups {
+		representative := groups[index].occurrences[0]
+		if equalWindow(segments[item.segment].tokens[item.start:], segments[representative.segment].tokens[representative.start:]) {
+			groups[index].occurrences = append(groups[index].occurrences, item)
+			return groups
+		}
+	}
+	return append(groups, exactWindowGroup{occurrences: []occurrence{item}})
+}
+
+func leftMaximalPairs(segments []segment, occurrences []occurrence) []occurrencePair {
+	groups := []predecessorGroup{}
+	byPredecessor := map[string]int{}
+	boundary := -1
+	for _, item := range occurrences {
+		if item.start == 0 {
+			if boundary < 0 {
+				boundary = len(groups)
+				groups = append(groups, predecessorGroup{})
+			}
+			groups[boundary].occurrences = append(groups[boundary].occurrences, item)
+			continue
+		}
+		text := segments[item.segment].tokens[item.start-1].Text
+		index, exists := byPredecessor[text]
+		if !exists {
+			index = len(groups)
+			byPredecessor[text] = index
+			groups = append(groups, predecessorGroup{})
+		}
+		groups[index].occurrences = append(groups[index].occurrences, item)
+	}
+	pairs := []occurrencePair{}
+	visit := func(left, right occurrence) {
+		pairs = append(pairs, occurrencePair{left: left, right: right})
+	}
+	if boundary >= 0 {
+		visitPairsWithin(groups[boundary].occurrences, visit)
+	}
+	for left := range groups {
+		for right := left + 1; right < len(groups); right++ {
+			visitPairsAcross(groups[left].occurrences, groups[right].occurrences, visit)
+		}
+	}
+	return pairs
+}
+
+func visitPairsWithin(items []occurrence, visit func(occurrence, occurrence)) {
+	for left := range items {
+		for right := left + 1; right < len(items); right++ {
+			visit(items[left], items[right])
+		}
+	}
+}
+
+func visitPairsAcross(left, right []occurrence, visit func(occurrence, occurrence)) {
+	for _, a := range left {
+		for _, b := range right {
+			visit(a, b)
+		}
+	}
 }
 
 func buildSegments(files []File) []segment {
@@ -223,6 +478,22 @@ func maximalPair(segments []segment, a, b occurrence) (extentPair, bool) {
 	return extentPair{a: left, b: right}, true
 }
 
+func leftMaximalPair(segments []segment, index lexicalIndex, a, b occurrence) (extentPair, bool) {
+	length := index.commonPrefix(segments, a, b)
+	if length < JscpdDefaultMinimumTokens {
+		return extentPair{}, false
+	}
+	left := extent{segment: a.segment, start: a.start, end: a.start + length}
+	right := extent{segment: b.segment, start: b.start, end: b.start + length}
+	if extentLess(segments, right, left) {
+		left, right = right, left
+	}
+	if left.segment == right.segment && left.end > right.start {
+		return extentPair{}, false
+	}
+	return extentPair{a: left, b: right}, true
+}
+
 func extentLess(segments []segment, a, b extent) bool {
 	if segments[a.segment].file != segments[b.segment].file {
 		return segments[a.segment].file < segments[b.segment].file
@@ -233,12 +504,11 @@ func extentLess(segments []segment, a, b extent) bool {
 	return a.start < b.start
 }
 
-func makePair(files []File, segments []segment, pair extentPair) model.ClonePair {
+func makePair(files []File, segments []segment, pair extentPair, id string) model.ClonePair {
 	a := makeRange(files, segments, pair.a)
 	b := makeRange(files, segments, pair.b)
 	lines := min(sourceLineCount(files[segments[pair.a.segment].file], a), sourceLineCount(files[segments[pair.b.segment].file], b))
-	tokens := segments[pair.a.segment].tokens[pair.a.start:pair.a.end]
-	return model.ClonePair{ID: pairID(a.File, b.File, tokens), A: a, B: b, Tokens: len(tokens), Lines: lines}
+	return model.ClonePair{ID: id, A: a, B: b, Tokens: pair.a.end - pair.a.start, Lines: lines}
 }
 
 func sourceLineCount(file File, lines model.Range) int {
@@ -263,17 +533,73 @@ func makeRange(files []File, segments []segment, item extent) model.Range {
 	}
 }
 
+func pairIDs(files []File, segments []segment, pairs []extentPair, index lexicalIndex) []string {
+	ids := make([]string, len(pairs))
+	requests := make([]pairIDRequest, 0, len(pairs))
+	for pairIndex, pair := range pairs {
+		fileA := files[segments[pair.a.segment].file].Path
+		fileB := files[segments[pair.b.segment].file].Path
+		if fileB < fileA {
+			fileA, fileB = fileB, fileA
+		}
+		if !index.active[pair.a.segment] {
+			ids[pairIndex] = pairID(fileA, fileB, segments[pair.a.segment].tokens[pair.a.start:pair.a.end])
+			continue
+		}
+		requests = append(requests, pairIDRequest{pairIndex: pairIndex, fileA: fileA, fileB: fileB, sequence: pair.a})
+	}
+	sort.Slice(requests, func(i, j int) bool {
+		if requests[i].fileA != requests[j].fileA {
+			return requests[i].fileA < requests[j].fileA
+		}
+		if requests[i].fileB != requests[j].fileB {
+			return requests[i].fileB < requests[j].fileB
+		}
+		if requests[i].sequence.segment != requests[j].sequence.segment {
+			return requests[i].sequence.segment < requests[j].sequence.segment
+		}
+		if requests[i].sequence.start != requests[j].sequence.start {
+			return requests[i].sequence.start < requests[j].sequence.start
+		}
+		return requests[i].sequence.end < requests[j].sequence.end
+	})
+	known := map[pairSequenceKey]string{}
+	for first := 0; first < len(requests); {
+		last := first + 1
+		for last < len(requests) && requests[last].fileA == requests[first].fileA && requests[last].fileB == requests[first].fileB && requests[last].sequence.segment == requests[first].sequence.segment && requests[last].sequence.start == requests[first].sequence.start {
+			last++
+		}
+		digest := sha256.New()
+		writeHashPart(digest, requests[first].fileA)
+		writeHashPart(digest, requests[first].fileB)
+		hashedEnd := requests[first].sequence.start
+		for _, request := range requests[first:last] {
+			key := pairSequenceKey{fileA: request.fileA, fileB: request.fileB, sequence: index.sequence(request.sequence)}
+			if id, exists := known[key]; exists {
+				ids[request.pairIndex] = id
+				continue
+			}
+			for hashedEnd < request.sequence.end {
+				writeHashPart(digest, segments[request.sequence.segment].tokens[hashedEnd].Text)
+				hashedEnd++
+			}
+			id := hex.EncodeToString(digest.Sum(nil))
+			known[key] = id
+			ids[request.pairIndex] = id
+		}
+		first = last
+	}
+	return ids
+}
+
 func pairID(fileA, fileB string, tokens []lang.Token) string {
-	if fileB < fileA {
-		fileA, fileB = fileB, fileA
-	}
-	hash := sha256.New()
-	writeHashPart(hash, fileA)
-	writeHashPart(hash, fileB)
+	digest := sha256.New()
+	writeHashPart(digest, fileA)
+	writeHashPart(digest, fileB)
 	for _, token := range tokens {
-		writeHashPart(hash, token.Text)
+		writeHashPart(digest, token.Text)
 	}
-	return hex.EncodeToString(hash.Sum(nil))
+	return hex.EncodeToString(digest.Sum(nil))
 }
 
 type hashWriter interface {
@@ -285,19 +611,6 @@ func writeHashPart(writer hashWriter, value string) {
 	binary.BigEndian.PutUint64(size[:], uint64(len(value)))
 	_, _ = writer.Write(size[:])
 	_, _ = writer.Write([]byte(value))
-}
-
-func markLines(files []File, segments []segment, item extent, lines model.Range, sets map[string]map[model.Bucket]map[int]struct{}) {
-	segment := segments[item.segment]
-	file := files[segment.file]
-	for _, bucket := range []model.Bucket{model.Source, model.Tests} {
-		bucketLines := file.SourceLines[bucket]
-		start := sort.SearchInts(bucketLines, lines.Start)
-		end := sort.SearchInts(bucketLines, lines.End+1)
-		for _, line := range bucketLines[start:end] {
-			sets[file.Path][bucket][line] = struct{}{}
-		}
-	}
 }
 
 func pairLess(a, b model.ClonePair) bool {

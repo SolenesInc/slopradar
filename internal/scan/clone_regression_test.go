@@ -2,9 +2,11 @@ package scan
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/SolenesInc/slopradar/internal/clones"
 	"github.com/SolenesInc/slopradar/internal/gitread"
 	"github.com/SolenesInc/slopradar/internal/model"
 )
@@ -58,5 +60,34 @@ func TestCloneEligibilityIgnoresCommentAndBlankLines(t *testing.T) {
 		} else if snapshot.Clones[0].ID != positiveID || snapshot.Buckets[model.Source] != positiveTotals {
 			t.Fatalf("comment-only lines changed clone identity or coverage: %#v", snapshot)
 		}
+	}
+}
+
+func TestBlobsHandlesRepetitiveJavaScript(t *testing.T) {
+	tokenCount := clones.JscpdDefaultMinimumTokens * clones.JscpdDefaultMinimumTokens
+	source := []byte(strings.Repeat(";\n", tokenCount))
+	blobs := []gitread.Blob{{
+		BlobInfo: gitread.BlobInfo{Path: "repeated.js", Size: int64(len(source))},
+		Content:  source,
+	}}
+	first, err := Blobs("repetitive", blobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := Blobs("repetitive", blobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(first, second) {
+		t.Fatal("repetitive clone output is not deterministic")
+	}
+	firstNonOverlappingShift := (tokenCount + 1) / 2
+	lastEligibleShift := tokenCount - clones.JscpdDefaultMinimumTokens
+	expectedPairs := lastEligibleShift - firstNonOverlappingShift + 1
+	if len(first.Clones) != expectedPairs {
+		t.Fatalf("clone pairs = %d, want %d", len(first.Clones), expectedPairs)
+	}
+	if first.Buckets[model.Source].CloneLines != tokenCount {
+		t.Fatalf("source clone lines = %d, want %d", first.Buckets[model.Source].CloneLines, tokenCount)
 	}
 }
