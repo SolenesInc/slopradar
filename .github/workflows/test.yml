@@ -8,6 +8,12 @@ permissions:
   contents: read
 
 jobs:
+  action-scripts:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: node --test scripts/upsert-comment.test.cjs
+
   native-notices:
     runs-on: ubuntu-22.04
     steps:

@@ -1,0 +1,69 @@
+const fs = require("node:fs")
+
+const marker = "<!-- slopradar -->"
+
+module.exports = async function upsertComment({
+  github,
+  context,
+  core,
+  reportPath,
+  commentEnabled,
+}) {
+  if (commentEnabled !== "true" && commentEnabled !== "false") {
+    throw new Error(`comment must be true or false, got: ${commentEnabled}`)
+  }
+  if (commentEnabled === "false") {
+    core.info("slopradar comment skipped: comment=false")
+    return
+  }
+
+  const pullRequest = context.payload.pull_request
+  if (!pullRequest) {
+    core.info("slopradar comment skipped: this is not a pull request event")
+    return
+  }
+
+  const repository = `${context.repo.owner}/${context.repo.repo}`
+  const headRepository = pullRequest.head?.repo?.full_name
+  if (headRepository !== repository) {
+    core.info(
+      `slopradar comment skipped: pull request head is ${headRepository || "an unavailable fork"}; GITHUB_TOKEN is read-only for fork pull requests`,
+    )
+    return
+  }
+
+  const body = fs.readFileSync(reportPath, "utf8")
+  if (!body.startsWith(marker)) {
+    throw new Error(`slopradar report must start with ${marker}`)
+  }
+
+  const request = {
+    owner: context.repo.owner,
+    repo: context.repo.repo,
+    issue_number: pullRequest.number,
+  }
+  try {
+    const comments = await github.paginate(github.rest.issues.listComments, request)
+    const existing = comments.find((comment) => comment.body?.startsWith(marker))
+
+    if (existing) {
+      await github.rest.issues.updateComment({
+        owner: request.owner,
+        repo: request.repo,
+        comment_id: existing.id,
+        body,
+      })
+      core.info(`slopradar comment updated: ${existing.html_url}`)
+      return
+    }
+
+    const created = await github.rest.issues.createComment({...request, body})
+    core.info(`slopradar comment created: ${created.data.html_url}`)
+  } catch (error) {
+    const status = error.status ? ` HTTP ${error.status}` : ""
+    throw new Error(
+      `slopradar could not upsert the pull request comment.${status}; ensure the workflow grants pull-requests: write. ${error.message}`,
+      {cause: error},
+    )
+  }
+}

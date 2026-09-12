@@ -1,0 +1,67 @@
+name: Slopradar
+description: Report complexity erosion and clone changes for a pull request
+
+inputs:
+  base:
+    description: Pull request base branch
+    default: ${{ github.base_ref }}
+  trend-months:
+    description: Months of repository trend to include, or 0 to disable the trend
+    default: "0"
+  comment:
+    description: Upsert the pull request comment
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: ${{ github.action_path }}/go.mod
+        cache: true
+        cache-dependency-path: ${{ github.action_path }}/go.sum
+
+    - name: Install slopradar
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        ACTION_REF: ${{ github.action_ref }}
+      run: |
+        install_dir="$RUNNER_TEMP/slopradar-bin"
+        mkdir -p "$install_dir"
+        export GOBIN="$install_dir"
+        if [[ -n "$ACTION_REF" ]]; then
+          go install "github.com/SolenesInc/slopradar/cmd/slopradar@${ACTION_REF}"
+        else
+          (cd "$ACTION_PATH" && go install ./cmd/slopradar)
+        fi
+        echo "$install_dir" >> "$GITHUB_PATH"
+
+    - name: Build slop report
+      id: report
+      shell: bash
+      env:
+        BASE_REF: ${{ inputs.base }}
+        TREND_MONTHS: ${{ inputs.trend-months }}
+      run: |
+        report_path=$(mktemp "$RUNNER_TEMP/slopradar-report.XXXXXX.md")
+        bash "$GITHUB_ACTION_PATH/scripts/action-report.sh" "$BASE_REF" "$TREND_MONTHS" "$report_path"
+        echo "path=$report_path" >> "$GITHUB_OUTPUT"
+
+    - name: Upsert pull request comment
+      uses: actions/github-script@v7
+      env:
+        COMMENT_ENABLED: ${{ inputs.comment }}
+        REPORT_PATH: ${{ steps.report.outputs.path }}
+      with:
+        github-token: ${{ github.token }}
+        script: |
+          const upsertComment = require(`${process.env.GITHUB_ACTION_PATH}/scripts/upsert-comment.cjs`)
+          await upsertComment({
+            github,
+            context,
+            core,
+            reportPath: process.env.REPORT_PATH,
+            commentEnabled: process.env.COMMENT_ENABLED,
+          })

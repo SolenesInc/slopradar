@@ -1,0 +1,104 @@
+const assert = require("node:assert/strict")
+const fs = require("node:fs")
+const os = require("node:os")
+const path = require("node:path")
+const test = require("node:test")
+
+const upsertComment = require("./upsert-comment.cjs")
+
+function issueAPI() {
+  const comments = []
+  return {
+    comments,
+    github: {
+      paginate: async () => comments,
+      rest: {
+        issues: {
+          listComments: async () => ({data: comments}),
+          createComment: async ({body}) => {
+            const comment = {id: "slopradar-comment", body, html_url: "https://example.invalid/comment"}
+            comments.push(comment)
+            return {data: comment}
+          },
+          updateComment: async ({comment_id, body}) => {
+            const comment = comments.find(({id}) => id === comment_id)
+            comment.body = body
+            return {data: comment}
+          },
+        },
+      },
+    },
+  }
+}
+
+function pullRequestContext(headRepository = "SolenesInc/slopradar") {
+  return {
+    repo: {owner: "SolenesInc", repo: "slopradar"},
+    payload: {pull_request: {number: 1, head: {repo: {full_name: headRepository}}}},
+  }
+}
+
+test("creates and then updates the marker comment", async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "slopradar-comment-"))
+  t.after(() => fs.rmSync(directory, {recursive: true}))
+  const reportPath = path.join(directory, "report.md")
+  const api = issueAPI()
+  const messages = []
+  const core = {info: (message) => messages.push(message)}
+
+  fs.writeFileSync(reportPath, "<!-- slopradar -->\nfirst report\n")
+  await upsertComment({github: api.github, context: pullRequestContext(), core, reportPath, commentEnabled: "true"})
+  fs.writeFileSync(reportPath, "<!-- slopradar -->\nupdated report\n")
+  await upsertComment({github: api.github, context: pullRequestContext(), core, reportPath, commentEnabled: "true"})
+
+  assert.equal(api.comments.length, 1)
+  assert.equal(api.comments[0].body, "<!-- slopradar -->\nupdated report\n")
+  assert.deepEqual(messages, [
+    "slopradar comment created: https://example.invalid/comment",
+    "slopradar comment updated: https://example.invalid/comment",
+  ])
+})
+
+test("keeps the report but skips a fork comment", async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "slopradar-comment-"))
+  t.after(() => fs.rmSync(directory, {recursive: true}))
+  const reportPath = path.join(directory, "report.md")
+  fs.writeFileSync(reportPath, "<!-- slopradar -->\nreport\n")
+  const api = issueAPI()
+  const messages = []
+
+  await upsertComment({
+    github: api.github,
+    context: pullRequestContext("contributor/slopradar"),
+    core: {info: (message) => messages.push(message)},
+    reportPath,
+    commentEnabled: "true",
+  })
+
+  assert.equal(api.comments.length, 0)
+  assert.match(messages[0], /GITHUB_TOKEN is read-only for fork pull requests/)
+})
+
+test("makes a comment permission failure actionable", async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "slopradar-comment-"))
+  t.after(() => fs.rmSync(directory, {recursive: true}))
+  const reportPath = path.join(directory, "report.md")
+  fs.writeFileSync(reportPath, "<!-- slopradar -->\nreport\n")
+  const api = issueAPI()
+  api.github.rest.issues.createComment = async () => {
+    const error = new Error("Resource not accessible by integration")
+    error.status = 403
+    throw error
+  }
+
+  await assert.rejects(
+    upsertComment({
+      github: api.github,
+      context: pullRequestContext(),
+      core: {info: () => {}},
+      reportPath,
+      commentEnabled: "true",
+    }),
+    /HTTP 403; ensure the workflow grants pull-requests: write/,
+  )
+})
