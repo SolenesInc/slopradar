@@ -65,6 +65,8 @@ The action accepts `base` (the pull request's base ref by default),
 
 ## Read the comment
 
+![slopradar pull request comment showing complexity mass and clone changes](docs/slopradar-comment.png)
+
 The headline reports absolute mass added to and removed from functions over CC
 10, plus clone pairs introduced and removed. Those are the useful pull-request
 signals: repository-wide ratios can barely move even when a change adds a large
