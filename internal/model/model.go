@@ -5,8 +5,9 @@ import "math"
 type Bucket string
 
 const (
-	Source Bucket = "source"
-	Tests  Bucket = "tests"
+	Source                  Bucket = "source"
+	Tests                   Bucket = "tests"
+	ErosionComplexityCutoff        = 10
 )
 
 type Function struct {
@@ -115,7 +116,7 @@ func Summarize(functions []Function) Totals {
 	totals := Totals{Functions: len(functions)}
 	for _, function := range functions {
 		totals.Mass += function.Mass
-		if function.CC > 10 {
+		if function.CC > ErosionComplexityCutoff {
 			totals.MassOverCC10 += function.Mass
 		}
 	}

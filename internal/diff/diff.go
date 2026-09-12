@@ -150,23 +150,23 @@ func functionDelta(key functionKey, before, after *model.Function) model.Functio
 		delta.Note = "new"
 	case after == nil:
 		delta.Note = "removed"
-	case before.CC <= 10 && after.CC > 10:
-		delta.Note = "crossed CC 10"
-	case before.CC > 10 && after.CC <= 10:
-		delta.Note = "back under CC 10"
+	case before.CC <= model.ErosionComplexityCutoff && after.CC > model.ErosionComplexityCutoff:
+		delta.Note = fmt.Sprintf("crossed CC %d", model.ErosionComplexityCutoff)
+	case before.CC > model.ErosionComplexityCutoff && after.CC <= model.ErosionComplexityCutoff:
+		delta.Note = fmt.Sprintf("back under CC %d", model.ErosionComplexityCutoff)
 	}
 	return delta
 }
 
 func addFunctionMass(buckets map[model.Bucket]model.BucketDelta, function model.FunctionDelta) {
 	if function.Before != nil && function.After != nil && functionBucket(*function.Before) != functionBucket(*function.After) {
-		if function.After.CC > 10 {
+		if function.After.CC > model.ErosionComplexityCutoff {
 			bucket := functionBucket(*function.After)
 			delta := buckets[bucket]
 			delta.MassAddedOverCC10 += function.After.Mass
 			buckets[bucket] = delta
 		}
-		if function.Before.CC > 10 {
+		if function.Before.CC > model.ErosionComplexityCutoff {
 			bucket := functionBucket(*function.Before)
 			delta := buckets[bucket]
 			delta.MassRemovedOverCC10 += function.Before.Mass
@@ -174,13 +174,13 @@ func addFunctionMass(buckets map[model.Bucket]model.BucketDelta, function model.
 		}
 		return
 	}
-	if function.After != nil && function.After.CC > 10 && function.DeltaMass > 0 {
+	if function.After != nil && function.After.CC > model.ErosionComplexityCutoff && function.DeltaMass > 0 {
 		bucket := functionBucket(*function.After)
 		delta := buckets[bucket]
 		delta.MassAddedOverCC10 += function.DeltaMass
 		buckets[bucket] = delta
 	}
-	if function.Before != nil && function.Before.CC > 10 && function.DeltaMass < 0 {
+	if function.Before != nil && function.Before.CC > model.ErosionComplexityCutoff && function.DeltaMass < 0 {
 		bucket := functionBucket(*function.Before)
 		delta := buckets[bucket]
 		delta.MassRemovedOverCC10 += -function.DeltaMass

@@ -19,6 +19,10 @@ func ReadDirectoryFiltered(root string, filter DirectoryFilter) ([]Blob, error) 
 	if err != nil {
 		return nil, fmt.Errorf("resolve directory %q: %w", root, err)
 	}
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, fmt.Errorf("resolve directory symlinks %q: %w", root, err)
+	}
 	blobs := []Blob{}
 	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {

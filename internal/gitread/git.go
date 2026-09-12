@@ -44,6 +44,24 @@ const (
 	lsTreeFieldCount
 )
 
+const (
+	catFileOIDField = iota
+	catFileTypeField
+	catFileSizeField
+	catFileFieldCount
+)
+
+const (
+	logRevisionField = iota
+	logDateField
+	logFieldCount
+)
+
+const (
+	gitRegularFileMode    = "100644"
+	gitExecutableFileMode = "100755"
+)
+
 func Open(dir string) (*Repository, error) {
 	root, err := gitOutput(context.Background(), dir, "rev-parse", "--show-toplevel")
 	if err != nil {
@@ -71,7 +89,7 @@ func (r *Repository) ListTree(ctx context.Context, rev string) ([]BlobInfo, erro
 		if len(fields) != lsTreeFieldCount {
 			return nil, fmt.Errorf("git ls-tree returned an invalid header: %q", header)
 		}
-		if string(fields[lsTreeTypeField]) != "blob" {
+		if string(fields[lsTreeTypeField]) != "blob" || !regularBlobMode(string(fields[lsTreeModeField])) {
 			continue
 		}
 		size, err := strconv.ParseInt(string(fields[lsTreeSizeField]), 10, 64)
@@ -134,18 +152,18 @@ func (r *Repository) ReadBlobs(ctx context.Context, infos []BlobInfo) ([]Blob, e
 			return nil, fmt.Errorf("read git cat-file header for %q: %w", info.Path, err)
 		}
 		fields := strings.Fields(header)
-		if len(fields) != 3 || fields[1] != "blob" {
+		if len(fields) != catFileFieldCount || fields[catFileTypeField] != "blob" {
 			abort()
 			return nil, fmt.Errorf("git cat-file returned an invalid blob header for %q: %q", info.Path, strings.TrimSpace(header))
 		}
-		if fields[0] != info.OID {
+		if fields[catFileOIDField] != info.OID {
 			abort()
-			return nil, fmt.Errorf("git cat-file returned %s for %q, want %s", fields[0], info.Path, info.OID)
+			return nil, fmt.Errorf("git cat-file returned %s for %q, want %s", fields[catFileOIDField], info.Path, info.OID)
 		}
-		size, err := strconv.ParseInt(fields[2], 10, 64)
+		size, err := strconv.ParseInt(fields[catFileSizeField], 10, 64)
 		if err != nil || size < 0 {
 			abort()
-			return nil, fmt.Errorf("git cat-file returned an invalid size for %q: %q", info.Path, fields[2])
+			return nil, fmt.Errorf("git cat-file returned an invalid size for %q: %q", info.Path, fields[catFileSizeField])
 		}
 		content := make([]byte, size)
 		if _, err := io.ReadFull(reader, content); err != nil {
@@ -232,17 +250,21 @@ func (r *Repository) firstParentHistory(ctx context.Context, rev string, limit i
 		return nil, err
 	}
 	fields := bytes.Split(out, []byte{0})
-	commits := make([]Commit, 0, len(fields)/2)
+	commits := make([]Commit, 0, len(fields)/logFieldCount)
 	for len(fields) > 0 && len(fields[len(fields)-1]) == 0 {
 		fields = fields[:len(fields)-1]
 	}
-	if len(fields)%2 != 0 {
+	if len(fields)%logFieldCount != 0 {
 		return nil, fmt.Errorf("git log returned an invalid first-parent history record")
 	}
-	for i := 0; i < len(fields); i += 2 {
-		commits = append(commits, Commit{Rev: string(fields[i]), Date: string(fields[i+1])})
+	for i := 0; i < len(fields); i += logFieldCount {
+		commits = append(commits, Commit{Rev: string(fields[i+logRevisionField]), Date: string(fields[i+logDateField])})
 	}
 	return commits, nil
+}
+
+func regularBlobMode(mode string) bool {
+	return mode == gitRegularFileMode || mode == gitExecutableFileMode
 }
 
 func gitOutput(ctx context.Context, dir string, args ...string) ([]byte, error) {

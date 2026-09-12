@@ -111,6 +111,52 @@ func TestReadDirectoryIsDeterministicAndSkipsSymlinks(t *testing.T) {
 	}
 }
 
+func TestReadDirectoryResolvesRootSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink permissions are not portable on Windows")
+	}
+	target := t.TempDir()
+	write(t, target, "source.go", "package fixture\n")
+	link := filepath.Join(t.TempDir(), "root")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	blobs, err := ReadDirectory(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blobs) != 1 || blobs[0].Path != "source.go" {
+		t.Fatalf("blobs = %#v", blobs)
+	}
+}
+
+func TestListTreeSkipsTrackedSymlinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink modes are not portable on Windows")
+	}
+	dir := t.TempDir()
+	git(t, dir, "init", "-b", "main")
+	git(t, dir, "config", "user.name", "Slopradar Test")
+	git(t, dir, "config", "user.email", "test@slopradar.invalid")
+	write(t, dir, "source.go", "package fixture\n")
+	if err := os.Symlink("source.go", filepath.Join(dir, "linked.go")); err != nil {
+		t.Fatal(err)
+	}
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-m", "source and link")
+	repo, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	infos, err := repo.ListTree(context.Background(), "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(infos) != 1 || infos[0].Path != "source.go" {
+		t.Fatalf("infos = %#v", infos)
+	}
+}
+
 func TestReadDirectoryFilteredDoesNotReadRejectedContent(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, "keep.txt", "keep")

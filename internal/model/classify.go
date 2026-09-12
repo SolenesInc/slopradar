@@ -41,7 +41,23 @@ func ParseConfig(data []byte) (Config, error) {
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return Config{}, fmt.Errorf("parse %s: content after the configuration object", ConfigFile)
 	}
+	if err := validatePatterns("excludes", config.Excludes); err != nil {
+		return Config{}, err
+	}
+	if err := validatePatterns("test_globs", config.TestGlobs); err != nil {
+		return Config{}, err
+	}
 	return config, nil
+}
+
+func validatePatterns(field string, patterns []string) error {
+	for _, pattern := range patterns {
+		normalized := strings.TrimPrefix(strings.ReplaceAll(pattern, "\\", "/"), "./")
+		if _, err := path.Match(normalized, ""); err != nil {
+			return fmt.Errorf("parse %s: %s pattern %q: %w", ConfigFile, field, pattern, err)
+		}
+	}
+	return nil
 }
 
 func Classify(file string, content []byte, config Config) Classification {

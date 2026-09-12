@@ -3,6 +3,7 @@ package model
 import (
 	"math"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -17,6 +18,21 @@ func TestSummarizeUsesOnlyTopLevelFunctions(t *testing.T) {
 	}
 	if math.Abs(got.Erosion-44.0/47.0) > 1e-12 {
 		t.Fatalf("erosion = %v", got.Erosion)
+	}
+}
+
+func TestParseConfigRejectsMalformedPatterns(t *testing.T) {
+	for _, test := range []struct {
+		data  string
+		field string
+	}{
+		{data: `{"excludes":["["]}`, field: "excludes"},
+		{data: `{"test_globs":["valid/**","["]}`, field: "test_globs"},
+	} {
+		_, err := ParseConfig([]byte(test.data))
+		if err == nil || !strings.Contains(err.Error(), test.field) || !strings.Contains(err.Error(), `pattern "["`) {
+			t.Fatalf("ParseConfig(%s) error = %v", test.data, err)
+		}
 	}
 }
 
