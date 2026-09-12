@@ -59,8 +59,12 @@ func Months(ctx context.Context, repository *gitread.Repository, head string, co
 		return nil, fmt.Errorf("parse head date %q for %s: %w", headCommit.Date, headCommit.Rev, err)
 	}
 	currentBoundary := time.Date(headDate.UTC().Year(), headDate.UTC().Month(), 1, 0, 0, 0, 0, time.UTC)
-	firstBoundary := currentBoundary.AddDate(0, -(count - 1), 0)
-	selected := make([]gitread.Commit, 0, count+1)
+	earliest := dated[0].date.UTC()
+	availableMonths := (currentBoundary.Year()-earliest.Year())*12 + int(currentBoundary.Month()-earliest.Month()) + 1
+	availableMonths = max(availableMonths, 1)
+	boundaryCount := min(count, availableMonths)
+	firstBoundary := currentBoundary.AddDate(0, -(boundaryCount - 1), 0)
+	selected := make([]gitread.Commit, 0, boundaryCount+1)
 	seen := map[string]struct{}{}
 	for boundary := firstBoundary; !boundary.After(currentBoundary); boundary = boundary.AddDate(0, 1, 0) {
 		for _, item := range dated {

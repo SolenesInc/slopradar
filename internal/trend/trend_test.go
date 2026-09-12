@@ -53,6 +53,13 @@ func TestMonthsSelectsFirstCommitAtBoundariesAndCurrentHead(t *testing.T) {
 	if !reflect.DeepEqual(gotRevs, want) {
 		t.Fatalf("monthly revisions = %#v, want %#v", gotRevs, want)
 	}
+	all, err := Months(context.Background(), repository, "HEAD", int(^uint(0)>>1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(all, got) {
+		t.Fatalf("oversized history request = %#v, want %#v", all, got)
+	}
 }
 
 func TestMergesReturnsRequestedFirstParentMergesInTrendOrder(t *testing.T) {
