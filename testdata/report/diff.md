@@ -50,9 +50,16 @@ Cyclomatic complexity (CC) counts decision paths through a function. SLOC is its
 
 ```mermaid
 xychart-beta
-    title "Repository erosion by month"
+    title "Source erosion by month"
     x-axis ["2026-01", "2026-02"]
     y-axis "erosion" 0 --> 1
     line [0.000000, 0.845397]
+```
+
+```mermaid
+xychart-beta
+    title "Tests erosion by month"
+    x-axis ["2026-01", "2026-02"]
+    y-axis "erosion" 0 --> 1
     line [0.000000, 0.000000]
 ```

@@ -236,20 +236,23 @@ func writeChart(w *markdownWriter, points []model.TrendPoint) {
 		}
 		labels[i] = fmt.Sprintf("\"%s\"", strings.ReplaceAll(date, "\"", "\\\""))
 	}
-	w.line("```mermaid")
-	w.line("xychart-beta")
-	w.line("    title \"Repository erosion by month\"")
-	w.line("    x-axis [%s]", strings.Join(labels, ", "))
-	w.line("    y-axis \"erosion\" 0 --> 1")
-	for _, bucket := range buckets() {
+	for index, bucket := range buckets() {
 		values := trendValues(points, bucket, func(t model.Totals) float64 { return t.Erosion })
 		formatted := make([]string, len(values))
 		for i, value := range values {
 			formatted[i] = fmt.Sprintf("%.6f", value)
 		}
+		if index != 0 {
+			w.line("")
+		}
+		w.line("```mermaid")
+		w.line("xychart-beta")
+		w.line("    title \"%s erosion by month\"", strings.ToUpper(string(bucket[:1]))+string(bucket[1:]))
+		w.line("    x-axis [%s]", strings.Join(labels, ", "))
+		w.line("    y-axis \"erosion\" 0 --> 1")
 		w.line("    line [%s]", strings.Join(formatted, ", "))
+		w.line("```")
 	}
-	w.line("```")
 }
 
 func writeSnapshotMarkdown(output io.Writer, snapshot model.Snapshot) error {
