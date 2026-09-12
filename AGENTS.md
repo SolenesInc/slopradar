@@ -7,4 +7,3 @@
   justifies it.
 - Do not add prose comments. Prefer names and structure that explain the code.
 - Identical input trees must produce identical output bytes.
-

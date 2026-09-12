@@ -34,12 +34,20 @@ type Repository struct {
 	dir string
 }
 
+const (
+	lsTreeModeField = iota
+	lsTreeTypeField
+	lsTreeOIDField
+	lsTreeSizeField
+	lsTreeFieldCount
+)
+
 func Open(dir string) (*Repository, error) {
 	root, err := gitOutput(context.Background(), dir, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return nil, err
 	}
-	return &Repository{dir: strings.TrimSpace(string(root))}, nil
+	return &Repository{dir: strings.TrimSuffix(string(root), "\n")}, nil
 }
 
 func (r *Repository) ListTree(ctx context.Context, rev string) ([]BlobInfo, error) {
@@ -58,17 +66,17 @@ func (r *Repository) ListTree(ctx context.Context, rev string) ([]BlobInfo, erro
 			return nil, fmt.Errorf("git ls-tree returned an entry without a path: %q", entry)
 		}
 		fields := bytes.Fields(header)
-		if len(fields) != 4 {
+		if len(fields) != lsTreeFieldCount {
 			return nil, fmt.Errorf("git ls-tree returned an invalid header: %q", header)
 		}
-		if string(fields[1]) != "blob" {
+		if string(fields[lsTreeTypeField]) != "blob" {
 			continue
 		}
-		size, err := strconv.ParseInt(string(fields[3]), 10, 64)
+		size, err := strconv.ParseInt(string(fields[lsTreeSizeField]), 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("parse size for %q: %w", path, err)
 		}
-		blobs = append(blobs, BlobInfo{Path: string(path), OID: string(fields[2]), Size: size})
+		blobs = append(blobs, BlobInfo{Path: string(path), OID: string(fields[lsTreeOIDField]), Size: size})
 	}
 	sort.Slice(blobs, func(i, j int) bool { return blobs[i].Path < blobs[j].Path })
 	return blobs, nil
@@ -78,7 +86,9 @@ func (r *Repository) ReadBlobs(ctx context.Context, infos []BlobInfo) ([]Blob, e
 	if len(infos) == 0 {
 		return []Blob{}, nil
 	}
-	cmd := exec.CommandContext(ctx, "git", "-C", r.dir, "cat-file", "--batch")
+	childCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	cmd := exec.CommandContext(childCtx, "git", "-C", r.dir, "cat-file", "--batch")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("open git cat-file input: %w", err)
@@ -105,37 +115,44 @@ func (r *Repository) ReadBlobs(ctx context.Context, infos []BlobInfo) ([]Blob, e
 		err := errors.Join(writer.Flush(), stdin.Close())
 		writeErr <- err
 	}()
+	abort := func() {
+		cancel()
+		_ = stdin.Close()
+		_ = stdout.Close()
+		_ = cmd.Wait()
+		<-writeErr
+	}
 
 	reader := bufio.NewReader(stdout)
 	blobs := make([]Blob, 0, len(infos))
 	for _, info := range infos {
 		header, err := reader.ReadString('\n')
 		if err != nil {
-			_ = cmd.Wait()
+			abort()
 			return nil, fmt.Errorf("read git cat-file header for %q: %w", info.Path, err)
 		}
 		fields := strings.Fields(header)
 		if len(fields) != 3 || fields[1] != "blob" {
-			_ = cmd.Wait()
+			abort()
 			return nil, fmt.Errorf("git cat-file returned an invalid blob header for %q: %q", info.Path, strings.TrimSpace(header))
 		}
 		if fields[0] != info.OID {
-			_ = cmd.Wait()
+			abort()
 			return nil, fmt.Errorf("git cat-file returned %s for %q, want %s", fields[0], info.Path, info.OID)
 		}
 		size, err := strconv.ParseInt(fields[2], 10, 64)
 		if err != nil || size < 0 {
-			_ = cmd.Wait()
+			abort()
 			return nil, fmt.Errorf("git cat-file returned an invalid size for %q: %q", info.Path, fields[2])
 		}
 		content := make([]byte, size)
 		if _, err := io.ReadFull(reader, content); err != nil {
-			_ = cmd.Wait()
+			abort()
 			return nil, fmt.Errorf("read git blob %q: %w", info.Path, err)
 		}
 		terminator, err := reader.ReadByte()
 		if err != nil || terminator != '\n' {
-			_ = cmd.Wait()
+			abort()
 			return nil, fmt.Errorf("git cat-file returned an invalid terminator for %q", info.Path)
 		}
 		blobs = append(blobs, Blob{BlobInfo: BlobInfo{Path: info.Path, OID: info.OID, Size: size}, Content: content})
