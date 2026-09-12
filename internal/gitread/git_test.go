@@ -225,19 +225,18 @@ func TestChangedFilesTreatsRenameAsRemovedAndAdded(t *testing.T) {
 	}
 }
 
-func TestReadBlobsStopsMalformedLargeBatch(t *testing.T) {
-	dir := t.TempDir()
-	git(t, dir, "init", "-b", "main")
-	repo, err := Open(dir)
-	if err != nil {
+func TestReadBlobsStopsMalformedStreamingProducer(t *testing.T) {
+	bin := t.TempDir()
+	fakeGit := filepath.Join(bin, "git")
+	script := "#!/bin/sh\nprintf 'invalid header\\n'\nwhile printf 'undrained payload\\n'; do :; done\n"
+	if err := os.WriteFile(fakeGit, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	infos := make([]BlobInfo, 10000)
-	for i := range infos {
-		infos[i] = BlobInfo{Path: "missing", OID: "missing"}
-	}
+	t.Setenv("PATH", bin)
+	repo := &Repository{dir: t.TempDir()}
+	infos := []BlobInfo{{Path: "malformed", OID: "malformed"}}
 	if _, err := repo.ReadBlobs(context.Background(), infos); err == nil {
-		t.Fatal("ReadBlobs accepted missing objects")
+		t.Fatal("ReadBlobs accepted malformed output")
 	}
 }
 
