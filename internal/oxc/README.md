@@ -57,10 +57,12 @@ tokens. Rust panics are caught and converted to a nonzero bridge status before
 they can unwind into Go.
 
 The Rust dependency graph and source checksums are pinned in `Cargo.lock`.
-Oxc's upstream notice is preserved in [LICENSE-OXC](LICENSE-OXC); every locked
-crate's declared license can be audited with:
+Oxc's upstream notice is preserved in [LICENSE-OXC](LICENSE-OXC). The checked-in
+[THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt) maps every locked crate and
+the Rust standard library to the license texts included in the bundle. Refresh
+and verify it with:
 
 ```sh
-cargo +1.96.0 metadata --locked --format-version 1 \
-  --manifest-path internal/oxc/rust/Cargo.toml
+python3 scripts/collect-oxc-licenses.py
+python3 scripts/collect-oxc-licenses.py --check
 ```
