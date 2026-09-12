@@ -73,10 +73,18 @@ func TestBuildKeepsCloneIdentityAcrossLineShiftsAndUnionsTouchedLines(t *testing
 		clone("stable", "source.go", 1, 5, "other.go", 10, 14),
 		clone("untouched", "one.go", 1, 5, "two.go", 1, 5),
 	}
+	base.CloneCoverage = []model.CloneCoverage{
+		coverage("one.go", model.Source, 1, 5),
+		coverage("source.go", model.Source, 1, 5),
+		coverage("source_test.go", model.Tests, 10, 14),
+	}
 	head := snapshot("head", nil, model.Totals{}, model.Totals{})
 	head.Clones = []model.ClonePair{
 		clone("added", "source.go", 20, 25, "third.go", 1, 6),
 		clone("stable", "source.go", 3, 7, "other.go", 12, 16),
+	}
+	head.CloneCoverage = []model.CloneCoverage{
+		{File: "source.go", Bucket: model.Source, Lines: []int{3, 4, 5, 6, 7, 20, 21, 22, 23, 24, 25}},
 	}
 	got := Build(base, head, []string{"source.go", "source_test.go"})
 	if len(got.ClonesAdded) != 1 || got.ClonesAdded[0].ID != "added" || len(got.ClonesRemoved) != 1 || got.ClonesRemoved[0].ID != "removed" {
@@ -131,4 +139,12 @@ func functionAt(file, name string, bucket model.Bucket, line, cc, sloc int) mode
 
 func clone(id, aFile string, aStart, aEnd int, bFile string, bStart, bEnd int) model.ClonePair {
 	return model.ClonePair{ID: id, A: model.Range{File: aFile, Start: aStart, End: aEnd}, B: model.Range{File: bFile, Start: bStart, End: bEnd}, Tokens: 50, Lines: int(math.Min(float64(aEnd-aStart+1), float64(bEnd-bStart+1)))}
+}
+
+func coverage(file string, bucket model.Bucket, first, last int) model.CloneCoverage {
+	lines := make([]int, 0, last-first+1)
+	for line := first; line <= last; line++ {
+		lines = append(lines, line)
+	}
+	return model.CloneCoverage{File: file, Bucket: bucket, Lines: lines}
 }

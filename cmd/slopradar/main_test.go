@@ -40,7 +40,7 @@ func TestScanDirectoryJSONIsDeterministic(t *testing.T) {
 }
 
 func TestScanArgsRejectsVisibleLimits(t *testing.T) {
-	_, _, err := scanArgs([]string{"one", "two"})
+	_, _, _, err := scanArgs([]string{"one", "two"})
 	if err == nil || err.Error() != `scan accepts one revision or directory, got "two"` {
 		t.Fatalf("error = %v", err)
 	}
@@ -87,10 +87,10 @@ func writeFile(t *testing.T, root, name, content string) {
 }
 
 func TestScanArgsAllowsOptionsOnEitherSide(t *testing.T) {
-	firstTarget, firstFormat, firstErr := scanArgs([]string{"HEAD", "--format", "json"})
-	secondTarget, secondFormat, secondErr := scanArgs([]string{"--format=json", "HEAD"})
-	if firstErr != nil || secondErr != nil || !reflect.DeepEqual([]string{firstTarget, firstFormat}, []string{secondTarget, secondFormat}) {
-		t.Fatalf("first = %q %q %v, second = %q %q %v", firstTarget, firstFormat, firstErr, secondTarget, secondFormat, secondErr)
+	firstTarget, firstFormat, firstCache, firstErr := scanArgs([]string{"HEAD", "--format", "json"})
+	secondTarget, secondFormat, secondCache, secondErr := scanArgs([]string{"--format=json", "--no-cache", "HEAD"})
+	if firstErr != nil || secondErr != nil || !reflect.DeepEqual([]string{firstTarget, firstFormat}, []string{secondTarget, secondFormat}) || !firstCache || secondCache {
+		t.Fatalf("first = %q %q cache=%t %v, second = %q %q cache=%t %v", firstTarget, firstFormat, firstCache, firstErr, secondTarget, secondFormat, secondCache, secondErr)
 	}
 }
 
@@ -117,7 +117,7 @@ func TestDiffResolvesBaseToMergeBase(t *testing.T) {
 
 	t.Chdir(dir)
 	var output bytes.Buffer
-	if err := run(context.Background(), []string{"diff", "--base", "main", "--head", "feature", "--format", "json"}, &output); err != nil {
+	if err := run(context.Background(), []string{"diff", "--base", "main", "--head", "feature", "--format", "json", "--no-cache"}, &output); err != nil {
 		t.Fatal(err)
 	}
 	var got model.Diff
@@ -174,15 +174,24 @@ func TestDiffTracksFunctionLifecycleAcrossThrowawayCommits(t *testing.T) {
 	if functionByName(t, addedDiff, "complex").After.CC != 12 || addedDiff.Buckets[model.Source].MassAddedOverCC10 != functionByName(t, addedDiff, "complex").After.Mass {
 		t.Fatalf("added complex delta = %#v", addedDiff)
 	}
+	if len(addedDiff.ClonesAdded) != 1 || len(addedDiff.ClonesRemoved) != 0 || addedDiff.Buckets[model.Source].CloneLinesTouchedBefore != 0 || addedDiff.Buckets[model.Source].CloneLinesTouchedAfter != 26 {
+		t.Fatalf("added clone delta = %#v", addedDiff)
+	}
 
 	splitDiff := commandDiff(t, added, split)
 	assertFunctionNotes(t, splitDiff, map[string]string{"complex": "removed", "splitA": "new", "splitB": "new"})
 	if splitDiff.Buckets[model.Source].MassRemovedOverCC10 != functionByName(t, splitDiff, "complex").Before.Mass {
 		t.Fatalf("split mass delta = %#v", splitDiff.Buckets[model.Source])
 	}
+	if len(splitDiff.ClonesAdded) != 0 || len(splitDiff.ClonesRemoved) != 0 || splitDiff.Buckets[model.Source].CloneLinesTouchedBefore != 26 || splitDiff.Buckets[model.Source].CloneLinesTouchedAfter != 26 {
+		t.Fatalf("line-shifted clone delta = %#v", splitDiff)
+	}
 
 	deletedDiff := commandDiff(t, split, deleted)
 	assertFunctionNotes(t, deletedDiff, map[string]string{"duplicateB": "removed"})
+	if len(deletedDiff.ClonesAdded) != 0 || len(deletedDiff.ClonesRemoved) != 1 || deletedDiff.ClonesRemoved[0].ID != addedDiff.ClonesAdded[0].ID || deletedDiff.Buckets[model.Source].CloneLinesTouchedBefore != 26 || deletedDiff.Buckets[model.Source].CloneLinesTouchedAfter != 0 {
+		t.Fatalf("removed clone delta = %#v", deletedDiff)
+	}
 }
 
 func TestTrendCommandRendersMonthlySnapshotsInJSONAndText(t *testing.T) {
@@ -206,7 +215,7 @@ func TestTrendCommandRendersMonthlySnapshotsInJSONAndText(t *testing.T) {
 	head := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
 	t.Chdir(dir)
 	var jsonOutput bytes.Buffer
-	if err := run(context.Background(), []string{"trend", "--months", "2", "--format", "json"}, &jsonOutput); err != nil {
+	if err := run(context.Background(), []string{"trend", "--months", "2", "--format", "json", "--no-cache"}, &jsonOutput); err != nil {
 		t.Fatal(err)
 	}
 	var points []model.TrendPoint
@@ -217,7 +226,7 @@ func TestTrendCommandRendersMonthlySnapshotsInJSONAndText(t *testing.T) {
 		t.Fatalf("trend points = %#v", points)
 	}
 	var textOutput bytes.Buffer
-	if err := run(context.Background(), []string{"trend", "--months=2", "--format=text"}, &textOutput); err != nil {
+	if err := run(context.Background(), []string{"trend", "--months=2", "--format=text", "--no-cache"}, &textOutput); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(textOutput.String(), "date\trevision\tbucket\terosion\tclone_share\n") || !strings.Contains(textOutput.String(), head) {
@@ -308,7 +317,7 @@ func duplicateB(value int) int {
 func commandDiff(t *testing.T, base, head string) model.Diff {
 	t.Helper()
 	var output bytes.Buffer
-	if err := run(context.Background(), []string{"diff", "--base", base, "--head", head, "--format", "json"}, &output); err != nil {
+	if err := run(context.Background(), []string{"diff", "--base", base, "--head", head, "--format", "json", "--no-cache"}, &output); err != nil {
 		t.Fatal(err)
 	}
 	var result model.Diff

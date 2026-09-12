@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	analysiscache "github.com/SolenesInc/slopradar/internal/cache"
 	"github.com/SolenesInc/slopradar/internal/clones"
 	"github.com/SolenesInc/slopradar/internal/gitread"
 	"github.com/SolenesInc/slopradar/internal/lang"
@@ -22,6 +23,7 @@ import (
 
 type analyzer struct {
 	language string
+	dialect  string
 	run      func(string, []byte) (lang.Result, error)
 }
 
@@ -55,10 +57,14 @@ func Directory(root string) (model.Snapshot, error) {
 	if err != nil {
 		return model.Snapshot{}, err
 	}
-	return blobsWithConfig("directory", blobs, config, skipped)
+	return blobsWithConfig("directory", blobs, config, skipped, nil)
 }
 
 func Revision(ctx context.Context, root, rev string) (model.Snapshot, error) {
+	return RevisionWithCache(ctx, root, rev, nil)
+}
+
+func RevisionWithCache(ctx context.Context, root, rev string, cache *analysiscache.Store) (model.Snapshot, error) {
 	repository, err := gitread.Open(root)
 	if err != nil {
 		return model.Snapshot{}, err
@@ -94,7 +100,7 @@ func Revision(ctx context.Context, root, rev string) (model.Snapshot, error) {
 	if err != nil {
 		return model.Snapshot{}, err
 	}
-	return blobsWithConfig(resolved, blobs, config, skipped)
+	return blobsWithConfig(resolved, blobs, config, skipped, cache)
 }
 
 func Blobs(rev string, blobs []gitread.Blob) (model.Snapshot, error) {
@@ -104,10 +110,10 @@ func Blobs(rev string, blobs []gitread.Blob) (model.Snapshot, error) {
 	if err != nil {
 		return model.Snapshot{}, err
 	}
-	return blobsWithConfig(rev, blobs, config, nil)
+	return blobsWithConfig(rev, blobs, config, nil, nil)
 }
 
-func blobsWithConfig(rev string, blobs []gitread.Blob, config model.Config, skipped []model.SkippedFile) (model.Snapshot, error) {
+func blobsWithConfig(rev string, blobs []gitread.Blob, config model.Config, skipped []model.SkippedFile, cache *analysiscache.Store) (model.Snapshot, error) {
 	blobs = append([]gitread.Blob(nil), blobs...)
 	sort.Slice(blobs, func(i, j int) bool { return blobs[i].Path < blobs[j].Path })
 	snapshot := model.Snapshot{
@@ -133,9 +139,14 @@ func blobsWithConfig(rev string, blobs []gitread.Blob, config model.Config, skip
 		if !ok {
 			continue
 		}
-		result, err := analyze.run(blob.Path, blob.Content)
-		if err != nil {
-			return model.Snapshot{}, err
+		result, found := cache.Get(blob.OID, analyze.dialect, blob.Path)
+		if !found {
+			analyzed, err := analyze.run(blob.Path, blob.Content)
+			if err != nil {
+				return model.Snapshot{}, err
+			}
+			result = analyzed
+			cache.Put(blob.OID, analyze.dialect, result)
 		}
 		snapshot.Warnings = append(snapshot.Warnings, result.Warnings...)
 		sourceLines := lang.SourceLines(blob.Content, result.Comments, result.TestSpans)
@@ -247,15 +258,24 @@ func configFrom(blobs []gitread.Blob) (model.Config, error) {
 }
 
 func analyzerFor(file string) (analyzer, bool) {
-	switch strings.ToLower(path.Ext(file)) {
+	lower := strings.ToLower(file)
+	extension := path.Ext(lower)
+	switch extension {
 	case ".go":
-		return analyzer{language: "go", run: golang.Analyze}, true
+		return analyzer{language: "go", dialect: "go", run: golang.Analyze}, true
 	case ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs":
-		return analyzer{language: "typescript", run: typescript.Analyze}, true
+		dialect := "typescript:" + strings.TrimPrefix(extension, ".")
+		for _, suffix := range []string{".d.ts", ".d.mts", ".d.cts"} {
+			if strings.HasSuffix(lower, suffix) {
+				dialect = "typescript:" + strings.TrimPrefix(suffix, ".")
+				break
+			}
+		}
+		return analyzer{language: "typescript", dialect: dialect, run: typescript.Analyze}, true
 	case ".py":
-		return analyzer{language: "python", run: python.Analyze}, true
+		return analyzer{language: "python", dialect: "python", run: python.Analyze}, true
 	case ".rs":
-		return analyzer{language: "rust", run: rust.Analyze}, true
+		return analyzer{language: "rust", dialect: "rust", run: rust.Analyze}, true
 	default:
 		return analyzer{}, false
 	}

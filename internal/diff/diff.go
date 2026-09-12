@@ -92,8 +92,8 @@ func Build(base, head model.Snapshot, touched []string) model.Diff {
 	})
 
 	result.ClonesAdded, result.ClonesRemoved = cloneChanges(base.Clones, head.Clones, touchedSet)
-	baseCloneLines := touchedCloneLines(base.Clones, touchedSet)
-	headCloneLines := touchedCloneLines(head.Clones, touchedSet)
+	baseCloneLines := touchedCloneLines(base.CloneCoverage, touchedSet)
+	headCloneLines := touchedCloneLines(head.CloneCoverage, touchedSet)
 	for _, bucket := range []model.Bucket{model.Source, model.Tests} {
 		delta := result.Buckets[bucket]
 		delta.CloneLinesTouchedBefore = baseCloneLines[bucket]
@@ -263,26 +263,11 @@ func cloneTouches(pair model.ClonePair, touched map[string]struct{}) bool {
 	return a || b
 }
 
-func touchedCloneLines(pairs []model.ClonePair, touched map[string]struct{}) map[model.Bucket]int {
-	lines := map[model.Bucket]map[string]map[int]struct{}{model.Source: {}, model.Tests: {}}
-	for _, pair := range pairs {
-		for _, item := range []model.Range{pair.A, pair.B} {
-			if _, ok := touched[item.File]; !ok {
-				continue
-			}
-			bucket := model.Classify(item.File, nil, model.Config{}).Bucket
-			if lines[bucket][item.File] == nil {
-				lines[bucket][item.File] = map[int]struct{}{}
-			}
-			for line := item.Start; line <= item.End; line++ {
-				lines[bucket][item.File][line] = struct{}{}
-			}
-		}
-	}
+func touchedCloneLines(coverage []model.CloneCoverage, touched map[string]struct{}) map[model.Bucket]int {
 	totals := map[model.Bucket]int{model.Source: 0, model.Tests: 0}
-	for bucket, files := range lines {
-		for _, fileLines := range files {
-			totals[bucket] += len(fileLines)
+	for _, item := range coverage {
+		if _, ok := touched[item.File]; ok {
+			totals[item.Bucket] += len(item.Lines)
 		}
 	}
 	return totals

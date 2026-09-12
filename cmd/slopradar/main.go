@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	analysiscache "github.com/SolenesInc/slopradar/internal/cache"
 	"github.com/SolenesInc/slopradar/internal/model"
 	"github.com/SolenesInc/slopradar/internal/scan"
 )
@@ -38,7 +39,7 @@ func run(ctx context.Context, args []string, output io.Writer) error {
 }
 
 func runScan(ctx context.Context, args []string, output io.Writer) error {
-	target, format, err := scanArgs(args)
+	target, format, useCache, err := scanArgs(args)
 	if err != nil {
 		return err
 	}
@@ -46,7 +47,7 @@ func runScan(ctx context.Context, args []string, output io.Writer) error {
 	if info, statErr := os.Stat(target); statErr == nil && info.IsDir() {
 		snapshot, err = scan.Directory(target)
 	} else {
-		snapshot, err = scan.Revision(ctx, ".", target)
+		snapshot, err = scan.RevisionWithCache(ctx, ".", target, cacheStore(useCache))
 	}
 	if err != nil {
 		return err
@@ -61,34 +62,44 @@ func runScan(ctx context.Context, args []string, output io.Writer) error {
 	return nil
 }
 
-func scanArgs(args []string) (string, string, error) {
+func scanArgs(args []string) (string, string, bool, error) {
 	target := "HEAD"
 	format := "text"
+	useCache := true
 	targetSet := false
 	for i := 0; i < len(args); i++ {
 		argument := args[i]
 		switch {
 		case argument == "--format":
 			if i+1 == len(args) {
-				return "", "", errors.New("--format needs json or text")
+				return "", "", false, errors.New("--format needs json or text")
 			}
 			i++
 			format = args[i]
 		case strings.HasPrefix(argument, "--format="):
 			format = strings.TrimPrefix(argument, "--format=")
+		case argument == "--no-cache":
+			useCache = false
 		case strings.HasPrefix(argument, "-"):
-			return "", "", fmt.Errorf("unknown scan option %q", argument)
+			return "", "", false, fmt.Errorf("unknown scan option %q", argument)
 		case targetSet:
-			return "", "", fmt.Errorf("scan accepts one revision or directory, got %q", argument)
+			return "", "", false, fmt.Errorf("scan accepts one revision or directory, got %q", argument)
 		default:
 			target = argument
 			targetSet = true
 		}
 	}
 	if err := scan.ValidateFormat(format); err != nil {
-		return "", "", err
+		return "", "", false, err
 	}
-	return target, format, nil
+	return target, format, useCache, nil
+}
+
+func cacheStore(enabled bool) *analysiscache.Store {
+	if !enabled {
+		return nil
+	}
+	return analysiscache.User()
 }
 
 func writeText(output io.Writer, snapshot model.Snapshot) {

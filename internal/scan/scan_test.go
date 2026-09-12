@@ -1,12 +1,15 @@
 package scan
 
 import (
+	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
+	analysiscache "github.com/SolenesInc/slopradar/internal/cache"
 	"github.com/SolenesInc/slopradar/internal/gitread"
 	"github.com/SolenesInc/slopradar/internal/model"
 )
@@ -90,6 +93,80 @@ function broken(`)
 	snapshot, err := Blobs("abc", []gitread.Blob{{BlobInfo: gitread.BlobInfo{Path: "source.ts", Size: int64(len(source))}, Content: source}})
 	if err == nil || !strings.Contains(err.Error(), "parse source.ts: invalid TypeScript or JavaScript syntax") {
 		t.Fatalf("snapshot = %#v, error = %v", snapshot, err)
+	}
+}
+
+func TestRevisionCacheRebindsPathsAndClassifiesAfterLoading(t *testing.T) {
+	dir := t.TempDir()
+	gitForScan(t, dir, "init", "-b", "main")
+	gitForScan(t, dir, "config", "user.name", "Slopradar Test")
+	gitForScan(t, dir, "config", "user.email", "test@slopradar.invalid")
+	writeScanFile(t, dir, "source.go", "package fixture\n\nfunc cached() {}\n")
+	gitForScan(t, dir, "add", ".")
+	gitForScan(t, dir, "commit", "-m", "source")
+	store := analysiscache.New(t.TempDir(), "test")
+	first, err := RevisionWithCache(context.Background(), dir, "HEAD", store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	warm, err := RevisionWithCache(context.Background(), dir, "HEAD", store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(first, warm) {
+		t.Fatalf("cold and warm snapshots differ\ncold: %#v\nwarm: %#v", first, warm)
+	}
+	gitForScan(t, dir, "mv", "source.go", "source_test.go")
+	gitForScan(t, dir, "commit", "-m", "move to tests")
+	cached, err := RevisionWithCache(context.Background(), dir, "HEAD", store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uncached, err := Revision(context.Background(), dir, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(cached, uncached) {
+		t.Fatalf("cached and uncached snapshots differ\ncached: %#v\nuncached: %#v", cached, uncached)
+	}
+	if len(cached.Functions) != 1 || cached.Functions[0].File != "source_test.go" || cached.Functions[0].Bucket != model.Tests || cached.Buckets[model.Source].Functions != 0 || cached.Buckets[model.Tests].Functions != 1 {
+		t.Fatalf("renamed cached snapshot = %#v", cached)
+	}
+}
+
+func TestRevisionCacheSeparatesTypeScriptDialects(t *testing.T) {
+	dir := t.TempDir()
+	gitForScan(t, dir, "init", "-b", "main")
+	gitForScan(t, dir, "config", "user.name", "Slopradar Test")
+	gitForScan(t, dir, "config", "user.email", "test@slopradar.invalid")
+	writeScanFile(t, dir, "view.tsx", "export const view = () => <div />;\n")
+	gitForScan(t, dir, "add", ".")
+	gitForScan(t, dir, "commit", "-m", "tsx")
+	store := analysiscache.New(t.TempDir(), "test")
+	if _, err := RevisionWithCache(context.Background(), dir, "HEAD", store); err != nil {
+		t.Fatal(err)
+	}
+	gitForScan(t, dir, "mv", "view.tsx", "view.ts")
+	gitForScan(t, dir, "commit", "-m", "ts")
+	if _, err := RevisionWithCache(context.Background(), dir, "HEAD", store); err == nil || !strings.Contains(err.Error(), "parse view.ts") {
+		t.Fatalf("TypeScript scan error = %v", err)
+	}
+}
+
+func gitForScan(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, output)
+	}
+	return string(output)
+}
+
+func writeScanFile(t *testing.T, root, name, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 

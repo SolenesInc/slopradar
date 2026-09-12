@@ -21,6 +21,7 @@ type diffOptions struct {
 	head        string
 	format      string
 	trendMonths int
+	useCache    bool
 }
 
 func runDiff(ctx context.Context, args []string, output io.Writer) error {
@@ -44,11 +45,12 @@ func runDiff(ctx context.Context, args []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	baseSnapshot, err := scan.Revision(ctx, ".", base)
+	cache := cacheStore(options.useCache)
+	baseSnapshot, err := scan.RevisionWithCache(ctx, ".", base, cache)
 	if err != nil {
 		return err
 	}
-	headSnapshot, err := scan.Revision(ctx, ".", head)
+	headSnapshot, err := scan.RevisionWithCache(ctx, ".", head, cache)
 	if err != nil {
 		return err
 	}
@@ -59,7 +61,7 @@ func runDiff(ctx context.Context, args []string, output io.Writer) error {
 			return err
 		}
 		result.Trend, err = trendcalc.Build(ctx, commits, func(ctx context.Context, rev string) (model.Snapshot, error) {
-			return scan.Revision(ctx, ".", rev)
+			return scan.RevisionWithCache(ctx, ".", rev, cache)
 		})
 		if err != nil {
 			return err
@@ -73,7 +75,7 @@ func runDiff(ctx context.Context, args []string, output io.Writer) error {
 }
 
 func parseDiffArgs(args []string) (diffOptions, error) {
-	options := diffOptions{format: "text"}
+	options := diffOptions{format: "text", useCache: true}
 	for i := 0; i < len(args); i++ {
 		argument := args[i]
 		switch {
@@ -118,6 +120,7 @@ func parseDiffArgs(args []string) (diffOptions, error) {
 			}
 			options.trendMonths = months
 		case argument == "--no-cache":
+			options.useCache = false
 		case strings.HasPrefix(argument, "-"):
 			return diffOptions{}, fmt.Errorf("unknown diff option %q", argument)
 		default:

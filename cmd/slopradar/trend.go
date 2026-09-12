@@ -14,9 +14,10 @@ import (
 )
 
 type trendOptions struct {
-	merges int
-	months int
-	format string
+	merges   int
+	months   int
+	format   string
+	useCache bool
 }
 
 func runTrend(ctx context.Context, args []string, output io.Writer) error {
@@ -41,8 +42,9 @@ func runTrend(ctx context.Context, args []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
+	cache := cacheStore(options.useCache)
 	points, err := trendcalc.Build(ctx, commits, func(ctx context.Context, rev string) (model.Snapshot, error) {
-		return scan.Revision(ctx, ".", rev)
+		return scan.RevisionWithCache(ctx, ".", rev, cache)
 	})
 	if err != nil {
 		return err
@@ -55,7 +57,7 @@ func runTrend(ctx context.Context, args []string, output io.Writer) error {
 }
 
 func parseTrendArgs(args []string) (trendOptions, error) {
-	options := trendOptions{format: "text"}
+	options := trendOptions{format: "text", useCache: true}
 	for i := 0; i < len(args); i++ {
 		argument := args[i]
 		switch {
@@ -100,6 +102,7 @@ func parseTrendArgs(args []string) (trendOptions, error) {
 		case strings.HasPrefix(argument, "--format="):
 			options.format = strings.TrimPrefix(argument, "--format=")
 		case argument == "--no-cache":
+			options.useCache = false
 		case strings.HasPrefix(argument, "-"):
 			return trendOptions{}, fmt.Errorf("unknown trend option %q", argument)
 		default:
