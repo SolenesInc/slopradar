@@ -1,0 +1,28 @@
+[
+  {
+    "file": "testdata/go/functions.go",
+    "name": "top",
+    "line": 5,
+    "cc": 6,
+    "sloc": 17,
+    "mass": 24.73863375370596,
+    "nested": [
+      {
+        "file": "testdata/go/functions.go",
+        "name": "inner",
+        "line": 8,
+        "cc": 3,
+        "sloc": 6,
+        "mass": 7.348469228349534
+      }
+    ]
+  },
+  {
+    "file": "testdata/go/functions.go",
+    "name": "Server.Serve",
+    "line": 24,
+    "cc": 3,
+    "sloc": 8,
+    "mass": 8.485281374238571
+  }
+]
