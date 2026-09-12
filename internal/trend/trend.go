@@ -91,6 +91,9 @@ func Build(ctx context.Context, commits []gitread.Commit, scan Scanner) ([]model
 		if err != nil {
 			return nil, fmt.Errorf("scan %s: %w", commit.Rev, err)
 		}
+		if err := model.ValidateComplete(snapshot); err != nil {
+			return nil, fmt.Errorf("scan %s: %w", commit.Rev, err)
+		}
 		buckets := map[model.Bucket]model.Totals{
 			model.Source: snapshot.Buckets[model.Source],
 			model.Tests:  snapshot.Buckets[model.Tests],

@@ -135,6 +135,34 @@ func TestDiffResolvesBaseToMergeBase(t *testing.T) {
 	}
 }
 
+func TestDiffRejectsHeadThatCrossesFileSizeTripwire(t *testing.T) {
+	dir := t.TempDir()
+	gitCommand(t, dir, "init", "-b", "main")
+	gitCommand(t, dir, "config", "user.name", "Slopradar Test")
+	gitCommand(t, dir, "config", "user.email", "test@slopradar.invalid")
+	writeFile(t, dir, "source.go", cc12Source())
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "base")
+	base := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+	askedBytes := int64(model.MaxFileBytes) + 1
+	if err := os.Truncate(filepath.Join(dir, "source.go"), askedBytes); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "cross size tripwire")
+	head := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+	t.Chdir(dir)
+	var output bytes.Buffer
+	err := run(context.Background(), []string{"diff", "--base", base, "--head", head, "--format", "json", "--no-cache"}, &output)
+	want := fmt.Sprintf("head snapshot: analysis of revision %q incomplete: file %q: max_file_bytes=%d, asked_bytes=%d", head, "source.go", model.MaxFileBytes, askedBytes)
+	if err == nil || err.Error() != want {
+		t.Fatalf("error = %v, want %q", err, want)
+	}
+	if output.Len() != 0 {
+		t.Fatalf("partial diff output = %q", output.String())
+	}
+}
+
 func TestTrendArgsRequireOnePositiveSelector(t *testing.T) {
 	for _, args := range [][]string{{}, {"--merges", "0"}, {"--months", "2", "--merges", "2"}} {
 		if _, err := parseTrendArgs(args); err == nil {

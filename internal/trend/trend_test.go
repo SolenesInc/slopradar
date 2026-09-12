@@ -115,6 +115,19 @@ func TestBuildKeepsOnlyTrendTotals(t *testing.T) {
 	}
 }
 
+func TestBuildRejectsWarningSnapshotAndPreservesDiagnostic(t *testing.T) {
+	commits := []gitread.Commit{{Rev: "requested", Date: "2026-01-01T00:00:00Z"}}
+	points, err := Build(context.Background(), commits, func(_ context.Context, _ string) (model.Snapshot, error) {
+		return model.Snapshot{Rev: "resolved", Warnings: []string{"parse source.go: invalid Go syntax; analyzed recoverable syntax"}}, nil
+	})
+	if err == nil || err.Error() != `scan requested: analysis of revision "resolved" incomplete: parse source.go: invalid Go syntax; analyzed recoverable syntax` {
+		t.Fatalf("error = %v", err)
+	}
+	if points != nil {
+		t.Fatalf("partial trend points = %#v", points)
+	}
+}
+
 func git(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)

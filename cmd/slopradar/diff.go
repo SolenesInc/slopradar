@@ -54,7 +54,10 @@ func runDiff(ctx context.Context, args []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	result := diffcalc.Build(baseSnapshot, headSnapshot, touched)
+	result, err := diffcalc.Build(baseSnapshot, headSnapshot, touched)
+	if err != nil {
+		return err
+	}
 	if options.trendMonths != 0 {
 		commits, err := trendcalc.Months(ctx, repository, head, options.trendMonths)
 		if err != nil {

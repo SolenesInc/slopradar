@@ -24,7 +24,7 @@ func TestBuildSeparatesMassAndAnnotatesEveryFunctionChange(t *testing.T) {
 		function("source_test.go", "test high", model.Tests, 20, 4),
 	}, model.Totals{Erosion: 0.3, CloneShare: 0.15}, model.Totals{Erosion: 0.6, CloneShare: 0.25})
 
-	got := Build(base, head, []string{"source_test.go", "source.go"})
+	got := build(t, base, head, []string{"source_test.go", "source.go"})
 	source := got.Buckets[model.Source]
 	if source.MassAddedOverCC10 != 86 || source.MassRemovedOverCC10 != 116 {
 		t.Fatalf("source mass delta = %#v", source)
@@ -60,7 +60,7 @@ func TestBuildMatchesRepeatedNamesByLineOrder(t *testing.T) {
 		functionAt("same.go", "(anonymous)", model.Source, 12, 4, 4),
 		functionAt("same.go", "(anonymous)", model.Source, 32, 5, 4),
 	}, model.Totals{}, model.Totals{})
-	got := Build(base, head, []string{"same.go"})
+	got := build(t, base, head, []string{"same.go"})
 	if len(got.Functions) != 2 || got.Functions[0].Before.Line != 10 || got.Functions[0].After.Line != 12 || got.Functions[1].Before.Line != 30 || got.Functions[1].After.Line != 32 {
 		t.Fatalf("deltas = %#v", got.Functions)
 	}
@@ -86,7 +86,7 @@ func TestBuildKeepsCloneIdentityAcrossLineShiftsAndUnionsTouchedLines(t *testing
 	head.CloneCoverage = []model.CloneCoverage{
 		{File: "source.go", Bucket: model.Source, Lines: []int{3, 4, 5, 6, 7, 20, 21, 22, 23, 24, 25}},
 	}
-	got := Build(base, head, []string{"source.go", "source_test.go"})
+	got := build(t, base, head, []string{"source.go", "source_test.go"})
 	if len(got.ClonesAdded) != 1 || got.ClonesAdded[0].ID != "added" || len(got.ClonesRemoved) != 1 || got.ClonesRemoved[0].ID != "removed" {
 		t.Fatalf("clone changes = added %#v, removed %#v", got.ClonesAdded, got.ClonesRemoved)
 	}
@@ -110,11 +110,11 @@ func TestBuildPreservesRepeatedCloneIdentityMultiplicity(t *testing.T) {
 		clone("repeated", "source.go", 21, 25, "other.go", 21, 25),
 		clone("repeated", "source.go", 40, 44, "other.go", 40, 44),
 	}
-	added := Build(base, head, []string{"source.go"})
+	added := build(t, base, head, []string{"source.go"})
 	if len(added.ClonesAdded) != 1 || added.ClonesAdded[0].A.Start != 40 || len(added.ClonesRemoved) != 0 {
 		t.Fatalf("added repeated occurrence = %#v, removed = %#v", added.ClonesAdded, added.ClonesRemoved)
 	}
-	removed := Build(head, base, []string{"source.go"})
+	removed := build(t, head, base, []string{"source.go"})
 	if len(removed.ClonesRemoved) != 1 || removed.ClonesRemoved[0].A.Start != 40 || len(removed.ClonesAdded) != 0 {
 		t.Fatalf("removed repeated occurrence = %#v, added = %#v", removed.ClonesRemoved, removed.ClonesAdded)
 	}
@@ -125,6 +125,15 @@ func snapshot(rev string, functions []model.Function, source, tests model.Totals
 		functions = []model.Function{}
 	}
 	return model.Snapshot{Rev: rev, Functions: functions, Clones: []model.ClonePair{}, Buckets: map[model.Bucket]model.Totals{model.Source: source, model.Tests: tests}}
+}
+
+func build(t *testing.T, base, head model.Snapshot, touched []string) model.Diff {
+	t.Helper()
+	result, err := Build(base, head, touched)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
 }
 
 func function(file, name string, bucket model.Bucket, cc, sloc int) model.Function {

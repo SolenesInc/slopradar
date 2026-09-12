@@ -1,6 +1,7 @@
 package diff
 
 import (
+	"fmt"
 	"math"
 	"sort"
 
@@ -12,7 +13,13 @@ type functionKey struct {
 	name string
 }
 
-func Build(base, head model.Snapshot, touched []string) model.Diff {
+func Build(base, head model.Snapshot, touched []string) (model.Diff, error) {
+	if err := model.ValidateComplete(base); err != nil {
+		return model.Diff{}, fmt.Errorf("base snapshot: %w", err)
+	}
+	if err := model.ValidateComplete(head); err != nil {
+		return model.Diff{}, fmt.Errorf("head snapshot: %w", err)
+	}
 	touched = append([]string(nil), touched...)
 	sort.Strings(touched)
 	touchedSet := make(map[string]struct{}, len(touched))
@@ -100,7 +107,7 @@ func Build(base, head model.Snapshot, touched []string) model.Diff {
 		delta.CloneLinesTouchedAfter = headCloneLines[bucket]
 		result.Buckets[bucket] = delta
 	}
-	return result
+	return result, nil
 }
 
 func groupFunctions(functions []model.Function, touched map[string]struct{}) map[functionKey][]model.Function {
