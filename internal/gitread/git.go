@@ -1,0 +1,204 @@
+package gitread
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+)
+
+type BlobInfo struct {
+	Path string
+	OID  string
+	Size int64
+}
+
+type Blob struct {
+	BlobInfo
+	Content []byte
+}
+
+type Merge struct {
+	Rev  string
+	Date string
+}
+
+type Repository struct {
+	dir string
+}
+
+func Open(dir string) (*Repository, error) {
+	root, err := gitOutput(context.Background(), dir, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return nil, err
+	}
+	return &Repository{dir: strings.TrimSpace(string(root))}, nil
+}
+
+func (r *Repository) ListTree(ctx context.Context, rev string) ([]BlobInfo, error) {
+	out, err := gitOutput(ctx, r.dir, "ls-tree", "-r", "-l", "-z", "--full-tree", rev)
+	if err != nil {
+		return nil, err
+	}
+	entries := bytes.Split(out, []byte{0})
+	blobs := make([]BlobInfo, 0, len(entries))
+	for _, entry := range entries {
+		if len(entry) == 0 {
+			continue
+		}
+		header, path, ok := bytes.Cut(entry, []byte{'\t'})
+		if !ok {
+			return nil, fmt.Errorf("git ls-tree returned an entry without a path: %q", entry)
+		}
+		fields := bytes.Fields(header)
+		if len(fields) != 4 {
+			return nil, fmt.Errorf("git ls-tree returned an invalid header: %q", header)
+		}
+		if string(fields[1]) != "blob" {
+			continue
+		}
+		size, err := strconv.ParseInt(string(fields[3]), 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("parse size for %q: %w", path, err)
+		}
+		blobs = append(blobs, BlobInfo{Path: string(path), OID: string(fields[2]), Size: size})
+	}
+	sort.Slice(blobs, func(i, j int) bool { return blobs[i].Path < blobs[j].Path })
+	return blobs, nil
+}
+
+func (r *Repository) ReadBlobs(ctx context.Context, infos []BlobInfo) ([]Blob, error) {
+	if len(infos) == 0 {
+		return []Blob{}, nil
+	}
+	cmd := exec.CommandContext(ctx, "git", "-C", r.dir, "cat-file", "--batch")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, fmt.Errorf("open git cat-file input: %w", err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("open git cat-file output: %w", err)
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("start git cat-file: %w", err)
+	}
+	writeErr := make(chan error, 1)
+	go func() {
+		writer := bufio.NewWriter(stdin)
+		for _, info := range infos {
+			if _, err := fmt.Fprintln(writer, info.OID); err != nil {
+				writeErr <- err
+				_ = stdin.Close()
+				return
+			}
+		}
+		err := errors.Join(writer.Flush(), stdin.Close())
+		writeErr <- err
+	}()
+
+	reader := bufio.NewReader(stdout)
+	blobs := make([]Blob, 0, len(infos))
+	for _, info := range infos {
+		header, err := reader.ReadString('\n')
+		if err != nil {
+			_ = cmd.Wait()
+			return nil, fmt.Errorf("read git cat-file header for %q: %w", info.Path, err)
+		}
+		fields := strings.Fields(header)
+		if len(fields) != 3 || fields[1] != "blob" {
+			_ = cmd.Wait()
+			return nil, fmt.Errorf("git cat-file returned an invalid blob header for %q: %q", info.Path, strings.TrimSpace(header))
+		}
+		if fields[0] != info.OID {
+			_ = cmd.Wait()
+			return nil, fmt.Errorf("git cat-file returned %s for %q, want %s", fields[0], info.Path, info.OID)
+		}
+		size, err := strconv.ParseInt(fields[2], 10, 64)
+		if err != nil || size < 0 {
+			_ = cmd.Wait()
+			return nil, fmt.Errorf("git cat-file returned an invalid size for %q: %q", info.Path, fields[2])
+		}
+		content := make([]byte, size)
+		if _, err := io.ReadFull(reader, content); err != nil {
+			_ = cmd.Wait()
+			return nil, fmt.Errorf("read git blob %q: %w", info.Path, err)
+		}
+		terminator, err := reader.ReadByte()
+		if err != nil || terminator != '\n' {
+			_ = cmd.Wait()
+			return nil, fmt.Errorf("git cat-file returned an invalid terminator for %q", info.Path)
+		}
+		blobs = append(blobs, Blob{BlobInfo: BlobInfo{Path: info.Path, OID: info.OID, Size: size}, Content: content})
+	}
+	if err := <-writeErr; err != nil {
+		_ = cmd.Wait()
+		return nil, fmt.Errorf("write git cat-file input: %w", err)
+	}
+	if err := cmd.Wait(); err != nil {
+		return nil, fmt.Errorf("git cat-file: %w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	return blobs, nil
+}
+
+func (r *Repository) ReadTree(ctx context.Context, rev string) ([]Blob, error) {
+	infos, err := r.ListTree(ctx, rev)
+	if err != nil {
+		return nil, err
+	}
+	return r.ReadBlobs(ctx, infos)
+}
+
+func (r *Repository) MergeBase(ctx context.Context, base, head string) (string, error) {
+	out, err := gitOutput(ctx, r.dir, "merge-base", base, head)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func (r *Repository) FirstParentMerges(ctx context.Context, rev string, limit int) ([]Merge, error) {
+	args := []string{"log", "--first-parent", "--merges", "-z", "--format=%H%x00%cI"}
+	if limit > 0 {
+		args = append(args, "--max-count="+strconv.Itoa(limit))
+	}
+	args = append(args, rev)
+	out, err := gitOutput(ctx, r.dir, args...)
+	if err != nil {
+		return nil, err
+	}
+	fields := bytes.Split(out, []byte{0})
+	merges := make([]Merge, 0, len(fields)/2)
+	for len(fields) > 0 && len(fields[len(fields)-1]) == 0 {
+		fields = fields[:len(fields)-1]
+	}
+	if len(fields)%2 != 0 {
+		return nil, fmt.Errorf("git log returned an invalid merge record")
+	}
+	for i := 0; i < len(fields); i += 2 {
+		merges = append(merges, Merge{Rev: string(fields[i]), Date: string(fields[i+1])})
+	}
+	return merges, nil
+}
+
+func gitOutput(ctx context.Context, dir string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+	}
+	return out, nil
+}
+
+func pathSlash(path string) string {
+	return filepath.ToSlash(path)
+}
