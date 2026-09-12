@@ -81,7 +81,7 @@ func isTest(file string, additions []string) bool {
 		if strings.HasSuffix(base, "_test.go") {
 			return true
 		}
-	case ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs":
+	case ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs":
 		if strings.HasSuffix(stem, ".test") || strings.HasSuffix(stem, ".spec") {
 			return true
 		}
