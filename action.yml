@@ -15,17 +15,26 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Resolve action source
+      id: action_source
+      shell: bash
+      env:
+        ACTION_PATH_RAW: ${{ github.action_path }}
+      run: |
+        action_path=$(bash "$ACTION_PATH_RAW/scripts/action-path.sh" "$ACTION_PATH_RAW")
+        echo "path=$action_path" >> "$GITHUB_OUTPUT"
+
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version-file: ${{ github.action_path }}/go.mod
+        go-version-file: ${{ steps.action_source.outputs.path }}/go.mod
         cache: true
-        cache-dependency-path: ${{ github.action_path }}/go.sum
+        cache-dependency-path: ${{ steps.action_source.outputs.path }}/go.sum
 
     - name: Install slopradar
       shell: bash
       env:
-        ACTION_PATH: ${{ github.action_path }}
+        ACTION_PATH: ${{ steps.action_source.outputs.path }}
         ACTION_REF: ${{ github.action_ref }}
       run: |
         install_dir="$RUNNER_TEMP/slopradar-bin"
@@ -42,11 +51,12 @@ runs:
       id: report
       shell: bash
       env:
+        ACTION_PATH: ${{ steps.action_source.outputs.path }}
         BASE_REF: ${{ inputs.base }}
         TREND_MONTHS: ${{ inputs.trend-months }}
       run: |
         report_path=$(mktemp "$RUNNER_TEMP/slopradar-report.XXXXXX.md")
-        bash "$GITHUB_ACTION_PATH/scripts/action-report.sh" "$BASE_REF" "$TREND_MONTHS" "$report_path"
+        bash "$ACTION_PATH/scripts/action-report.sh" "$BASE_REF" "$TREND_MONTHS" "$report_path"
         echo "path=$report_path" >> "$GITHUB_OUTPUT"
 
     - name: Upsert pull request comment
@@ -54,7 +64,7 @@ runs:
       env:
         COMMENT_ENABLED: ${{ inputs.comment }}
         REPORT_PATH: ${{ steps.report.outputs.path }}
-        SLOPRADAR_ACTION_PATH: ${{ github.action_path }}
+        SLOPRADAR_ACTION_PATH: ${{ steps.action_source.outputs.path }}
       with:
         github-token: ${{ github.token }}
         script: |

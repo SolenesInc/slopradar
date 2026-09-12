@@ -9,6 +9,27 @@ import (
 	"testing"
 )
 
+func TestActionSourcePathIsCanonical(t *testing.T) {
+	repository, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository, err = filepath.EvalSymlinks(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(repository, "scripts", "action-path.sh")
+	dottedPath := repository + string(os.PathSeparator) + ".//"
+	command := exec.Command("bash", script, dottedPath)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("resolve action path: %v\n%s", err, output)
+	}
+	if resolved := strings.TrimSpace(string(output)); resolved != repository {
+		t.Fatalf("resolved path = %q, want %q", resolved, repository)
+	}
+}
+
 func TestActionReportFetchesBaseAndWritesMarkdownSummary(t *testing.T) {
 	root := t.TempDir()
 	remote := filepath.Join(root, "remote.git")
