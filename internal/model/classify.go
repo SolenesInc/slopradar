@@ -49,7 +49,7 @@ func Classify(file string, content []byte, config Config) Classification {
 	if excluded(file, config.Excludes) {
 		return Classification{Excluded: true}
 	}
-	classification := Classification{Bucket: Source, Generated: generated(content)}
+	classification := Classification{Bucket: Source, Generated: generated(file, content)}
 	if isTest(file, config.TestGlobs) {
 		classification.Bucket = Tests
 	}
@@ -106,26 +106,65 @@ func matchesAny(file string, patterns []string) bool {
 	return false
 }
 
-func generated(content []byte) bool {
-	for _, line := range bytes.Split(content, []byte{'\n'}) {
-		trimmed := bytes.TrimSpace(line)
-		if !generatedComment(trimmed) {
-			continue
+func generated(file string, content []byte) bool {
+	content = bytes.TrimPrefix(content, []byte{0xef, 0xbb, 0xbf})
+	extension := strings.ToLower(path.Ext(file))
+	for {
+		comment, rest, ok := leadingComment(bytes.TrimSpace(content), extension)
+		if !ok {
+			return false
 		}
-		lower := bytes.ToLower(trimmed)
-		if bytes.Contains(trimmed, []byte("Code generated ")) && bytes.Contains(trimmed, []byte(" DO NOT EDIT.")) ||
+		lower := bytes.ToLower(comment)
+		if bytes.Contains(comment, []byte("Code generated ")) && bytes.Contains(comment, []byte(" DO NOT EDIT.")) ||
 			bytes.Contains(lower, []byte("@generated")) || bytes.Contains(lower, []byte("linguist-generated")) {
 			return true
 		}
+		content = rest
 	}
-	return false
 }
 
-func generatedComment(line []byte) bool {
-	for _, prefix := range [][]byte{[]byte("//"), []byte("#"), []byte("/*"), []byte("*"), []byte("<!--")} {
-		if bytes.HasPrefix(line, prefix) {
-			return true
+func leadingComment(content []byte, extension string) ([]byte, []byte, bool) {
+	hashComment := extension == ".py" && bytes.HasPrefix(content, []byte("#"))
+	shebang := bytes.HasPrefix(content, []byte("#!")) && !bytes.HasPrefix(content, []byte("#!["))
+	if bytes.HasPrefix(content, []byte("//")) || hashComment || shebang {
+		comment, rest, _ := bytes.Cut(content, []byte{'\n'})
+		return comment, rest, true
+	}
+	var opener, closer []byte
+	switch {
+	case bytes.HasPrefix(content, []byte("/*")):
+		if extension == ".rs" {
+			end := nestedCommentEnd(content)
+			return content[:end], content[end:], true
+		}
+		opener, closer = []byte("/*"), []byte("*/")
+	case bytes.HasPrefix(content, []byte("<!--")):
+		opener, closer = []byte("<!--"), []byte("-->")
+	default:
+		return nil, nil, false
+	}
+	end := bytes.Index(content[len(opener):], closer)
+	if end < 0 {
+		return content, nil, true
+	}
+	end += len(opener) + len(closer)
+	return content[:end], content[end:], true
+}
+
+func nestedCommentEnd(content []byte) int {
+	depth := 1
+	for i := 2; i+1 < len(content); i++ {
+		switch string(content[i : i+2]) {
+		case "/*":
+			depth++
+			i++
+		case "*/":
+			depth--
+			i++
+			if depth == 0 {
+				return i + 1
+			}
 		}
 	}
-	return false
+	return len(content)
 }

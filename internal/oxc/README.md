@@ -22,6 +22,10 @@ Installing slopradar needs Go, cgo and a C compiler. It does not need Rust,
 Cargo or Node. Rust `1.96.0`, pinned by `rust-toolchain.toml`, is only needed
 to rebuild the libraries.
 
+Generated-file markers are recognized in leading comments before source code.
+Marker text inside string literals does not exclude handwritten files. Unmarked
+generator output can be excluded explicitly through `.slopradar.json`.
+
 ## Rebuild
 
 Install the targets without changing the global Rust default:
