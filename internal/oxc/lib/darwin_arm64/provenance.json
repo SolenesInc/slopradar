@@ -1,0 +1,12 @@
+{
+  "platform": "darwin_arm64",
+  "rust_target": "aarch64-apple-darwin",
+  "compiler": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2",
+  "source_sha256": "6689746710f36b452a0900f000f9585e345c6f48647d3e72d216f947d84228bf",
+  "build_script_sha256": "d83b4fb6077971703d9f86d0b38096f661c0e622ce8a4ec35988d9d0f50b0c6e",
+  "cargo_lock_sha256": "9b738e58a28530f5fb6bd64e9240f8abc095f5aa91fe902afbcfca18717fa899",
+  "archive": "libslopradar_oxc.a",
+  "archive_bytes": 41878816,
+  "archive_sha256": "b80bbdd83f6301f00307aa47aebcd10cef2e4a7c81e06f14007fc01d7146f19c",
+  "deployment_target": "MACOSX_DEPLOYMENT_TARGET=11.0"
+}
