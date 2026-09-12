@@ -90,6 +90,28 @@ func TestBuildKeepsCloneIdentityAcrossLineShiftsAndUnionsTouchedLines(t *testing
 	}
 }
 
+func TestBuildPreservesRepeatedCloneIdentityMultiplicity(t *testing.T) {
+	base := snapshot("base", nil, model.Totals{}, model.Totals{})
+	base.Clones = []model.ClonePair{
+		clone("repeated", "source.go", 1, 5, "other.go", 1, 5),
+		clone("repeated", "source.go", 20, 24, "other.go", 20, 24),
+	}
+	head := snapshot("head", nil, model.Totals{}, model.Totals{})
+	head.Clones = []model.ClonePair{
+		clone("repeated", "source.go", 2, 6, "other.go", 2, 6),
+		clone("repeated", "source.go", 21, 25, "other.go", 21, 25),
+		clone("repeated", "source.go", 40, 44, "other.go", 40, 44),
+	}
+	added := Build(base, head, []string{"source.go"})
+	if len(added.ClonesAdded) != 1 || added.ClonesAdded[0].A.Start != 40 || len(added.ClonesRemoved) != 0 {
+		t.Fatalf("added repeated occurrence = %#v, removed = %#v", added.ClonesAdded, added.ClonesRemoved)
+	}
+	removed := Build(head, base, []string{"source.go"})
+	if len(removed.ClonesRemoved) != 1 || removed.ClonesRemoved[0].A.Start != 40 || len(removed.ClonesAdded) != 0 {
+		t.Fatalf("removed repeated occurrence = %#v, added = %#v", removed.ClonesRemoved, removed.ClonesAdded)
+	}
+}
+
 func snapshot(rev string, functions []model.Function, source, tests model.Totals) model.Snapshot {
 	if functions == nil {
 		functions = []model.Function{}

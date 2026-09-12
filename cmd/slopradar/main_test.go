@@ -185,6 +185,46 @@ func TestDiffTracksFunctionLifecycleAcrossThrowawayCommits(t *testing.T) {
 	assertFunctionNotes(t, deletedDiff, map[string]string{"duplicateB": "removed"})
 }
 
+func TestTrendCommandRendersMonthlySnapshotsInJSONAndText(t *testing.T) {
+	dir := t.TempDir()
+	gitCommand(t, dir, "init", "-b", "main")
+	gitCommand(t, dir, "config", "user.name", "Slopradar Test")
+	gitCommand(t, dir, "config", "user.email", "test@slopradar.invalid")
+	commits := []struct {
+		date   string
+		source string
+	}{
+		{"2026-01-10T12:00:00Z", "package fixture\n\nfunc simple() {}\n"},
+		{"2026-02-05T12:00:00Z", cc12Source()},
+		{"2026-02-20T12:00:00Z", cc12Source() + "\nfunc another() {}\n"},
+	}
+	for _, item := range commits {
+		writeFile(t, dir, "source.go", item.source)
+		gitCommand(t, dir, "add", ".")
+		gitCommandAt(t, dir, item.date, "commit", "-m", item.date)
+	}
+	head := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+	t.Chdir(dir)
+	var jsonOutput bytes.Buffer
+	if err := run(context.Background(), []string{"trend", "--months", "2", "--format", "json"}, &jsonOutput); err != nil {
+		t.Fatal(err)
+	}
+	var points []model.TrendPoint
+	if err := json.Unmarshal(jsonOutput.Bytes(), &points); err != nil {
+		t.Fatal(err)
+	}
+	if len(points) != 3 || points[len(points)-1].Rev != head || points[1].Buckets[model.Source].Erosion != 1 {
+		t.Fatalf("trend points = %#v", points)
+	}
+	var textOutput bytes.Buffer
+	if err := run(context.Background(), []string{"trend", "--months=2", "--format=text"}, &textOutput); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(textOutput.String(), "date\trevision\tbucket\terosion\tclone_share\n") || !strings.Contains(textOutput.String(), head) {
+		t.Fatalf("text trend = %q", textOutput.String())
+	}
+}
+
 func cc12Source() string {
 	return `package fixture
 
@@ -303,6 +343,17 @@ func functionByName(t *testing.T, result model.Diff, name string) model.Function
 func gitCommand(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, output)
+	}
+	return string(output)
+}
+
+func gitCommandAt(t *testing.T, dir, date string, args ...string) string {
+	t.Helper()
+	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	command.Env = append(os.Environ(), "GIT_AUTHOR_DATE="+date, "GIT_COMMITTER_DATE="+date)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, output)
