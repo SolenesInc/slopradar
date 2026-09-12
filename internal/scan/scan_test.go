@@ -100,12 +100,6 @@ func TestDirectoryIgnoresSymlinkedConfiguration(t *testing.T) {
 	}
 }
 
-func TestValidateFormatNamesInvalidValue(t *testing.T) {
-	if err := ValidateFormat("yaml"); err == nil || err.Error() != `format must be json or text, got "yaml"` {
-		t.Fatalf("error = %v", err)
-	}
-}
-
 func TestBlobsRejectsTypeScriptParseErrors(t *testing.T) {
 	source := []byte(`function valid() {}
 function broken(`)

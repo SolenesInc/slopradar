@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +11,7 @@ import (
 	diffcalc "github.com/SolenesInc/slopradar/internal/diff"
 	"github.com/SolenesInc/slopradar/internal/gitread"
 	"github.com/SolenesInc/slopradar/internal/model"
+	"github.com/SolenesInc/slopradar/internal/report"
 	"github.com/SolenesInc/slopradar/internal/scan"
 	trendcalc "github.com/SolenesInc/slopradar/internal/trend"
 )
@@ -70,11 +70,7 @@ func runDiff(ctx context.Context, args []string, output io.Writer) error {
 			return err
 		}
 	}
-	if options.format == "json" {
-		return writeJSON(output, result)
-	}
-	writeDiffText(output, result)
-	return nil
+	return report.WriteDiff(output, options.format, result, report.ColorEnabled(output))
 }
 
 func parseDiffArgs(args []string) (diffOptions, error) {
@@ -100,7 +96,7 @@ func parseDiffArgs(args []string) (diffOptions, error) {
 			options.head = strings.TrimPrefix(argument, "--head=")
 		case argument == "--format":
 			if i+1 == len(args) {
-				return diffOptions{}, errors.New("--format needs json or text")
+				return diffOptions{}, errors.New("--format needs md, json, or text")
 			}
 			i++
 			options.format = args[i]
@@ -133,7 +129,7 @@ func parseDiffArgs(args []string) (diffOptions, error) {
 	if options.base == "" || options.head == "" {
 		return diffOptions{}, errors.New("diff requires --base <rev> and --head <rev>")
 	}
-	if err := scan.ValidateFormat(options.format); err != nil {
+	if err := report.ValidateFormat(options.format); err != nil {
 		return diffOptions{}, err
 	}
 	return options, nil
@@ -145,40 +141,4 @@ func positiveInt(name, value string) (int, error) {
 		return 0, fmt.Errorf("%s must be a positive integer, got %q", name, value)
 	}
 	return number, nil
-}
-
-func writeJSON(output io.Writer, value any) error {
-	encoder := json.NewEncoder(output)
-	encoder.SetEscapeHTML(false)
-	encoder.SetIndent("", "  ")
-	return encoder.Encode(value)
-}
-
-func writeDiffText(output io.Writer, result model.Diff) {
-	fmt.Fprintln(output, "base\t"+result.Base)
-	fmt.Fprintln(output, "head\t"+result.Head)
-	fmt.Fprintln(output, "bucket\tmass_added_over_cc_10\tmass_removed_over_cc_10\tclone_lines_touched_before\tclone_lines_touched_after")
-	for _, bucket := range []model.Bucket{model.Source, model.Tests} {
-		delta := result.Buckets[bucket]
-		fmt.Fprintf(output, "%s\t+%.6f\t-%.6f\t%d\t%d\n", bucket, delta.MassAddedOverCC10, delta.MassRemovedOverCC10, delta.CloneLinesTouchedBefore, delta.CloneLinesTouchedAfter)
-	}
-	fmt.Fprintf(output, "clone_pairs\tadded=%d\tremoved=%d\n", len(result.ClonesAdded), len(result.ClonesRemoved))
-	fmt.Fprintln(output, "file\tname\tcc_before\tcc_after\tsloc_before\tsloc_after\tdelta_mass\tnote")
-	for _, function := range result.Functions {
-		fmt.Fprintf(output, "%s\t%s\t%s\t%s\t%s\t%s\t%+.6f\t%s\n",
-			function.File, function.Name, functionMetric(function.Before, func(item *model.Function) int { return item.CC }), functionMetric(function.After, func(item *model.Function) int { return item.CC }),
-			functionMetric(function.Before, func(item *model.Function) int { return item.SLOC }), functionMetric(function.After, func(item *model.Function) int { return item.SLOC }), function.DeltaMass, function.Note)
-	}
-	fmt.Fprintln(output, "repository\tbucket\terosion_before\terosion_after\tclone_share_before\tclone_share_after")
-	for _, bucket := range []model.Bucket{model.Source, model.Tests} {
-		delta := result.Buckets[bucket]
-		fmt.Fprintf(output, "repository\t%s\t%.6f\t%.6f\t%.6f\t%.6f\n", bucket, delta.ErosionBefore, delta.ErosionAfter, delta.CloneShareBefore, delta.CloneShareAfter)
-	}
-}
-
-func functionMetric(function *model.Function, metric func(*model.Function) int) string {
-	if function == nil {
-		return "·"
-	}
-	return strconv.Itoa(metric(function))
 }

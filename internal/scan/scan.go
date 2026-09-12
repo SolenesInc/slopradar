@@ -283,10 +283,3 @@ func analyzerFor(file string) (analyzer, bool) {
 		return analyzer{}, false
 	}
 }
-
-func ValidateFormat(format string) error {
-	if format != "json" && format != "text" {
-		return fmt.Errorf("format must be json or text, got %q", format)
-	}
-	return nil
-}

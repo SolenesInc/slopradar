@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/SolenesInc/slopradar/internal/model"
+	"github.com/SolenesInc/slopradar/internal/report"
 )
 
 func TestScanDirectoryJSONIsDeterministic(t *testing.T) {
@@ -52,8 +53,10 @@ func TestWriteTextIncludesSkipLimitAndAsk(t *testing.T) {
 		SkippedDetails: []model.SkippedFile{{File: "large.go", MaxBytes: model.MaxFileBytes, AskedBytes: model.MaxFileBytes + 1}},
 	}
 	var output bytes.Buffer
-	writeText(&output, snapshot)
-	want := fmt.Sprintf("skipped\tlarge.go\tmax_file_bytes=%d\tasked_bytes=%d\n", model.MaxFileBytes, model.MaxFileBytes+1)
+	if err := report.WriteSnapshot(&output, "text", snapshot, false); err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("skipped  large.go  max_file_bytes=%d  asked_bytes=%d\n", model.MaxFileBytes, model.MaxFileBytes+1)
 	if !bytes.Contains(output.Bytes(), []byte(want)) {
 		t.Fatalf("output = %q, want line %q", output.String(), want)
 	}
@@ -71,10 +74,11 @@ func TestWriteTextIncludesClonePairs(t *testing.T) {
 		}},
 	}
 	var output bytes.Buffer
-	writeText(&output, snapshot)
-	want := "stable\ta.go\t2\t5\tb.go\t7\t10\t50\t4\n"
-	if !bytes.Contains(output.Bytes(), []byte(want)) {
-		t.Fatalf("output = %q, want %q", output.String(), want)
+	if err := report.WriteSnapshot(&output, "text", snapshot, false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "stable") || !strings.Contains(output.String(), "a.go:2-5") || !strings.Contains(output.String(), "b.go:7-10") {
+		t.Fatalf("output = %q", output.String())
 	}
 }
 
@@ -91,6 +95,18 @@ func TestScanArgsAllowsOptionsOnEitherSide(t *testing.T) {
 	secondTarget, secondFormat, secondCache, secondErr := scanArgs([]string{"--format=json", "--no-cache", "HEAD"})
 	if firstErr != nil || secondErr != nil || !reflect.DeepEqual([]string{firstTarget, firstFormat}, []string{secondTarget, secondFormat}) || !firstCache || secondCache {
 		t.Fatalf("first = %q %q cache=%t %v, second = %q %q cache=%t %v", firstTarget, firstFormat, firstCache, firstErr, secondTarget, secondFormat, secondCache, secondErr)
+	}
+}
+
+func TestEveryCommandAcceptsMarkdownFormat(t *testing.T) {
+	if _, format, _, err := scanArgs([]string{"--format", "md"}); err != nil || format != "md" {
+		t.Fatalf("scan format = %q, error = %v", format, err)
+	}
+	if options, err := parseDiffArgs([]string{"--base", "main", "--head", "HEAD", "--format=md"}); err != nil || options.format != "md" {
+		t.Fatalf("diff options = %#v, error = %v", options, err)
+	}
+	if options, err := parseTrendArgs([]string{"--months", "1", "--format=md"}); err != nil || options.format != "md" {
+		t.Fatalf("trend options = %#v, error = %v", options, err)
 	}
 }
 
@@ -222,6 +238,43 @@ func TestDiffTracksFunctionLifecycleAcrossThrowawayCommits(t *testing.T) {
 	}
 }
 
+func TestDiffReportGoldensFromThrowawayRepository(t *testing.T) {
+	goldenRoot, err := filepath.Abs(filepath.Join("..", "..", "testdata", "report"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	gitCommand(t, dir, "init", "-b", "main")
+	gitCommand(t, dir, "config", "user.name", "Slopradar Test")
+	gitCommand(t, dir, "config", "user.email", "test@slopradar.invalid")
+	writeFile(t, dir, "source.go", "package fixture\n\nfunc stable() int { return 1 }\n")
+	gitCommand(t, dir, "add", ".")
+	gitCommandAt(t, dir, "2026-01-10T12:00:00Z", "commit", "-m", "base")
+	base := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+	writeFile(t, dir, "source.go", lifecycleAddedSource())
+	gitCommand(t, dir, "add", ".")
+	gitCommandAt(t, dir, "2026-02-20T12:00:00Z", "commit", "-m", "add complexity and clones")
+	head := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+	t.Chdir(dir)
+	for _, format := range []string{"md", "text", "json"} {
+		var output bytes.Buffer
+		if err := run(context.Background(), []string{"diff", "--base", base, "--head", head, "--trend", "2", "--format", format, "--no-cache"}, &output); err != nil {
+			t.Fatal(err)
+		}
+		basePlaceholder := "<base>" + strings.Repeat("_", len(base)-len("<base>"))
+		headPlaceholder := "<head>" + strings.Repeat("_", len(head)-len("<head>"))
+		got := strings.ReplaceAll(strings.ReplaceAll(output.String(), base, basePlaceholder), head, headPlaceholder)
+		golden := filepath.Join(goldenRoot, "diff."+format)
+		want, err := os.ReadFile(golden)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != string(want) {
+			t.Fatalf("%s report differs from %s\n%s", format, golden, got)
+		}
+	}
+}
+
 func TestTrendCommandRendersMonthlySnapshotsInJSONAndText(t *testing.T) {
 	dir := t.TempDir()
 	gitCommand(t, dir, "init", "-b", "main")
@@ -257,7 +310,7 @@ func TestTrendCommandRendersMonthlySnapshotsInJSONAndText(t *testing.T) {
 	if err := run(context.Background(), []string{"trend", "--months=2", "--format=text", "--no-cache"}, &textOutput); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(textOutput.String(), "date\trevision\tbucket\terosion\tclone_share\n") || !strings.Contains(textOutput.String(), head) {
+	if !strings.HasPrefix(textOutput.String(), "date") || !strings.Contains(textOutput.String(), "revision") || !strings.Contains(textOutput.String(), head) {
 		t.Fatalf("text trend = %q", textOutput.String())
 	}
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/SolenesInc/slopradar/internal/gitread"
 	"github.com/SolenesInc/slopradar/internal/model"
+	"github.com/SolenesInc/slopradar/internal/report"
 	"github.com/SolenesInc/slopradar/internal/scan"
 	trendcalc "github.com/SolenesInc/slopradar/internal/trend"
 )
@@ -49,11 +50,7 @@ func runTrend(ctx context.Context, args []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if options.format == "json" {
-		return writeJSON(output, points)
-	}
-	writeTrendText(output, points)
-	return nil
+	return report.WriteTrend(output, options.format, points, report.ColorEnabled(output))
 }
 
 func parseTrendArgs(args []string) (trendOptions, error) {
@@ -95,7 +92,7 @@ func parseTrendArgs(args []string) (trendOptions, error) {
 			}
 		case argument == "--format":
 			if i+1 == len(args) {
-				return trendOptions{}, errors.New("--format needs json or text")
+				return trendOptions{}, errors.New("--format needs md, json, or text")
 			}
 			i++
 			options.format = args[i]
@@ -112,18 +109,8 @@ func parseTrendArgs(args []string) (trendOptions, error) {
 	if (options.merges == 0) == (options.months == 0) {
 		return trendOptions{}, errors.New("trend requires exactly one of --merges <n> or --months <n>")
 	}
-	if err := scan.ValidateFormat(options.format); err != nil {
+	if err := report.ValidateFormat(options.format); err != nil {
 		return trendOptions{}, err
 	}
 	return options, nil
-}
-
-func writeTrendText(output io.Writer, points []model.TrendPoint) {
-	fmt.Fprintln(output, "date\trevision\tbucket\terosion\tclone_share")
-	for _, point := range points {
-		for _, bucket := range []model.Bucket{model.Source, model.Tests} {
-			totals := point.Buckets[bucket]
-			fmt.Fprintf(output, "%s\t%s\t%s\t%.6f\t%.6f\n", point.Date, point.Rev, bucket, totals.Erosion, totals.CloneShare)
-		}
-	}
 }

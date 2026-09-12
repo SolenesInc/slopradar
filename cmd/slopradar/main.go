@@ -2,16 +2,15 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 
 	analysiscache "github.com/SolenesInc/slopradar/internal/cache"
 	"github.com/SolenesInc/slopradar/internal/model"
+	"github.com/SolenesInc/slopradar/internal/report"
 	"github.com/SolenesInc/slopradar/internal/scan"
 )
 
@@ -52,14 +51,7 @@ func runScan(ctx context.Context, args []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if format == "json" {
-		encoder := json.NewEncoder(output)
-		encoder.SetEscapeHTML(false)
-		encoder.SetIndent("", "  ")
-		return encoder.Encode(snapshot)
-	}
-	writeText(output, snapshot)
-	return nil
+	return report.WriteSnapshot(output, format, snapshot, report.ColorEnabled(output))
 }
 
 func scanArgs(args []string) (string, string, bool, error) {
@@ -72,7 +64,7 @@ func scanArgs(args []string) (string, string, bool, error) {
 		switch {
 		case argument == "--format":
 			if i+1 == len(args) {
-				return "", "", false, errors.New("--format needs json or text")
+				return "", "", false, errors.New("--format needs md, json, or text")
 			}
 			i++
 			format = args[i]
@@ -89,7 +81,7 @@ func scanArgs(args []string) (string, string, bool, error) {
 			targetSet = true
 		}
 	}
-	if err := scan.ValidateFormat(format); err != nil {
+	if err := report.ValidateFormat(format); err != nil {
 		return "", "", false, err
 	}
 	return target, format, useCache, nil
@@ -100,34 +92,4 @@ func cacheStore(enabled bool) *analysiscache.Store {
 		return nil
 	}
 	return analysiscache.User()
-}
-
-func writeText(output io.Writer, snapshot model.Snapshot) {
-	fmt.Fprintln(output, "revision\t"+snapshot.Rev)
-	fmt.Fprintln(output, "bucket\tfunctions\tmass\tmass_over_cc_10\terosion\tsource_lines\tclone_lines\tclone_share")
-	for _, bucket := range []model.Bucket{model.Source, model.Tests} {
-		totals := snapshot.Buckets[bucket]
-		fmt.Fprintf(output, "%s\t%d\t%.6f\t%.6f\t%.6f\t%d\t%d\t%.6f\n", bucket, totals.Functions, totals.Mass, totals.MassOverCC10, totals.Erosion, totals.SourceLines, totals.CloneLines, totals.CloneShare)
-	}
-	fmt.Fprintln(output, "clone_id\tfile_a\tstart_a\tend_a\tfile_b\tstart_b\tend_b\ttokens\tlines")
-	for _, pair := range snapshot.Clones {
-		fmt.Fprintf(output, "%s\t%s\t%d\t%d\t%s\t%d\t%d\t%d\t%d\n", pair.ID, pair.A.File, pair.A.Start, pair.A.End, pair.B.File, pair.B.Start, pair.B.End, pair.Tokens, pair.Lines)
-	}
-	fmt.Fprintln(output, "file\tline\tbucket\tname\tcc\tsloc\tmass")
-	for _, function := range snapshot.Functions {
-		writeFunction(output, function, "")
-	}
-	for _, skipped := range snapshot.SkippedDetails {
-		fmt.Fprintf(output, "skipped\t%s\tmax_file_bytes=%s\tasked_bytes=%s\n", skipped.File, strconv.FormatInt(skipped.MaxBytes, 10), strconv.FormatInt(skipped.AskedBytes, 10))
-	}
-	for _, warning := range snapshot.Warnings {
-		fmt.Fprintln(output, "warning\t"+warning)
-	}
-}
-
-func writeFunction(output io.Writer, function model.Function, prefix string) {
-	fmt.Fprintf(output, "%s\t%d\t%s\t%s%s\t%d\t%d\t%.6f\n", function.File, function.Line, function.Bucket, prefix, function.Name, function.CC, function.SLOC, function.Mass)
-	for _, nested := range function.Nested {
-		writeFunction(output, nested, prefix+">")
-	}
 }
