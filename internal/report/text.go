@@ -3,6 +3,7 @@ package report
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/SolenesInc/slopradar/internal/model"
 )
@@ -44,14 +45,15 @@ func writeTextFunction(w *textWriter, function model.Function, prefix string) {
 }
 
 func writeDiffText(output io.Writer, result model.Diff, color bool) error {
-	w := newTextWriter(output)
+	var aligned strings.Builder
+	w := newTextWriter(&aligned)
 	w.line("base\t%s", safeText(result.Base))
 	w.line("head\t%s", safeText(result.Head))
 	w.line("bucket\tmass added over CC 10\tmass removed over CC 10\tclone lines touched before\tclone lines touched after\terosion before\terosion after\tclone share before\tclone share after")
 	for _, bucket := range buckets() {
 		delta := result.Buckets[bucket]
-		added := colorize(color, "32", fmt.Sprintf("+%.3f", delta.MassAddedOverCC10))
-		removed := colorize(color, "31", fmt.Sprintf("-%.3f", delta.MassRemovedOverCC10))
+		added := fmt.Sprintf("+%.3f", delta.MassAddedOverCC10)
+		removed := fmt.Sprintf("-%.3f", delta.MassRemovedOverCC10)
 		w.line("%s\t%s\t%s\t%d\t%d\t%.3f\t%.3f\t%.3f\t%.3f", bucket, added, removed, delta.CloneLinesTouchedBefore, delta.CloneLinesTouchedAfter, delta.ErosionBefore, delta.ErosionAfter, delta.CloneShareBefore, delta.CloneShareAfter)
 	}
 	w.line("")
@@ -59,11 +61,6 @@ func writeDiffText(output io.Writer, result model.Diff, color bool) error {
 	w.line("file\tname\tCC before\tCC after\tSLOC before\tSLOC after\tmass delta\tnote")
 	for _, function := range result.Functions {
 		delta := fmt.Sprintf("%+.3f", function.DeltaMass)
-		if function.DeltaMass > 0 {
-			delta = colorize(color, "32", delta)
-		} else if function.DeltaMass < 0 {
-			delta = colorize(color, "31", delta)
-		}
 		w.line("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s", safeText(function.File), safeText(function.Name), metric(function.Before, func(item *model.Function) int { return item.CC }), metric(function.After, func(item *model.Function) int { return item.CC }), metric(function.Before, func(item *model.Function) int { return item.SLOC }), metric(function.After, func(item *model.Function) int { return item.SLOC }), delta, safeText(function.Note))
 	}
 	w.line("")
@@ -81,7 +78,58 @@ func writeDiffText(output io.Writer, result model.Diff, color bool) error {
 		w.line("")
 		writeTrendRows(w, result.Trend)
 	}
-	return w.flush()
+	if err := w.flush(); err != nil {
+		return err
+	}
+	text := aligned.String()
+	if color {
+		text = colorDiffText(text, result)
+	}
+	_, err := io.WriteString(output, text)
+	return err
+}
+
+func colorDiffText(text string, result model.Diff) string {
+	lines := strings.SplitAfter(text, "\n")
+	if firstBucket := lineAfter(lines, "bucket  "); firstBucket >= 0 {
+		for i, bucket := range buckets() {
+			line := firstBucket + i
+			delta := result.Buckets[bucket]
+			lines[line] = colorToken(lines[line], fmt.Sprintf("+%.3f", delta.MassAddedOverCC10), "32")
+			lines[line] = colorToken(lines[line], fmt.Sprintf("-%.3f", delta.MassRemovedOverCC10), "31")
+		}
+	}
+	if firstFunction := lineAfter(lines, "file  "); firstFunction >= 0 {
+		for i, function := range result.Functions {
+			code := ""
+			if function.DeltaMass > 0 {
+				code = "32"
+			} else if function.DeltaMass < 0 {
+				code = "31"
+			}
+			if code != "" {
+				lines[firstFunction+i] = colorToken(lines[firstFunction+i], fmt.Sprintf("%+.3f", function.DeltaMass), code)
+			}
+		}
+	}
+	return strings.Join(lines, "")
+}
+
+func lineAfter(lines []string, prefix string) int {
+	for i, line := range lines {
+		if strings.HasPrefix(line, prefix) {
+			return i + 1
+		}
+	}
+	return -1
+}
+
+func colorToken(line, token, code string) string {
+	index := strings.LastIndex(line, token)
+	if index < 0 {
+		return line
+	}
+	return line[:index] + "\x1b[" + code + "m" + token + "\x1b[0m" + line[index+len(token):]
 }
 
 func writeTrendText(output io.Writer, points []model.TrendPoint) error {

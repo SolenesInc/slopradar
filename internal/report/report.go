@@ -131,10 +131,3 @@ func metric(function *model.Function, value func(*model.Function) int) string {
 func buckets() []model.Bucket {
 	return []model.Bucket{model.Source, model.Tests}
 }
-
-func colorize(enabled bool, code, value string) string {
-	if !enabled {
-		return value
-	}
-	return "\x1b[" + code + "m" + value + "\x1b[0m"
-}

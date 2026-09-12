@@ -76,12 +76,19 @@ func TestEmptyDiffMarkdownHasOneHeadlineLine(t *testing.T) {
 
 func TestDiffTextUsesColorWhenEnabled(t *testing.T) {
 	result := model.Diff{Buckets: map[model.Bucket]model.BucketDelta{model.Source: {MassAddedOverCC10: 2, MassRemovedOverCC10: 1}, model.Tests: {}}}
-	var output strings.Builder
-	if err := WriteDiff(&output, "text", result, true); err != nil {
+	var plain, colored strings.Builder
+	if err := WriteDiff(&plain, "text", result, false); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output.String(), "\x1b[32m+2.000\x1b[0m") || !strings.Contains(output.String(), "\x1b[31m-1.000\x1b[0m") {
-		t.Fatalf("colored output = %q", output.String())
+	if err := WriteDiff(&colored, "text", result, true); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(colored.String(), "\x1b[32m+2.000\x1b[0m") || !strings.Contains(colored.String(), "\x1b[31m-1.000\x1b[0m") {
+		t.Fatalf("colored output = %q", colored.String())
+	}
+	stripped := strings.NewReplacer("\x1b[32m", "", "\x1b[31m", "", "\x1b[0m", "").Replace(colored.String())
+	if stripped != plain.String() {
+		t.Fatalf("stripped colored output differs\nplain:   %q\ncolored: %q", plain.String(), stripped)
 	}
 }
 
