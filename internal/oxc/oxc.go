@@ -47,8 +47,7 @@ type token struct {
 }
 
 func Analyze(file string, source []byte) (lang.Result, error) {
-	extension := path.Ext(file)
-	parserFile := "source" + strings.ToLower(extension)
+	parserFile := syntheticParserFile(file)
 	fileBytes := []byte(parserFile)
 	var output C.slopradar_oxc_buffer
 	status := C.slopradar_oxc_analyze(
@@ -92,6 +91,16 @@ func Analyze(file string, source []byte) (lang.Result, error) {
 		result.Tokens = append(result.Tokens, lang.Token{Text: item.Text, Line: item.Line, Bucket: model.Source})
 	}
 	return result, nil
+}
+
+func syntheticParserFile(file string) string {
+	lower := strings.ToLower(file)
+	for _, suffix := range []string{".d.ts", ".d.mts", ".d.cts"} {
+		if strings.HasSuffix(lower, suffix) {
+			return "source" + suffix
+		}
+	}
+	return "source" + path.Ext(lower)
 }
 
 func bytePointer(data []byte) *C.uint8_t {

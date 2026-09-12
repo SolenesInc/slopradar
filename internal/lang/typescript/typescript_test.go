@@ -49,6 +49,26 @@ func TestAnalyzeUsingDeclaration(t *testing.T) {
 	}
 }
 
+func TestAnalyzeDeclarationFiles(t *testing.T) {
+	root := filepath.Join("..", "..", "..", "testdata", "typescript")
+	source, err := os.ReadFile(filepath.Join(root, "declarations.d.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []string{"declarations.d.ts", "declarations.d.mts", "declarations.d.cts"} {
+		result, err := Analyze(file, source)
+		if err != nil {
+			t.Fatalf("%s: %v", file, err)
+		}
+		if len(result.Functions) != 0 {
+			t.Fatalf("%s functions = %#v", file, result.Functions)
+		}
+		if len(result.Tokens) == 0 {
+			t.Fatalf("%s returned no tokens", file)
+		}
+	}
+}
+
 func TestAnalyzeAcceptsUppercaseExtensions(t *testing.T) {
 	result, err := Analyze("SOURCE.TS", []byte("function run() {}"))
 	if err != nil {

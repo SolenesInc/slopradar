@@ -178,6 +178,25 @@ func TestRevisionCacheSeparatesTypeScriptDialects(t *testing.T) {
 	}
 }
 
+func TestRevisionCacheSeparatesTypeScriptDeclarations(t *testing.T) {
+	dir := t.TempDir()
+	gitForScan(t, dir, "init", "-b", "main")
+	gitForScan(t, dir, "config", "user.name", "Slopradar Test")
+	gitForScan(t, dir, "config", "user.email", "test@slopradar.invalid")
+	writeScanFile(t, dir, "reporter.d.ts", "export const reporter: Reporter\n")
+	gitForScan(t, dir, "add", ".")
+	gitForScan(t, dir, "commit", "-m", "declaration")
+	store := analysiscache.New(t.TempDir(), "test")
+	if _, err := RevisionWithCache(context.Background(), dir, "HEAD", store); err != nil {
+		t.Fatal(err)
+	}
+	gitForScan(t, dir, "mv", "reporter.d.ts", "reporter.ts")
+	gitForScan(t, dir, "commit", "-m", "ordinary TypeScript")
+	if _, err := RevisionWithCache(context.Background(), dir, "HEAD", store); err == nil || !strings.Contains(err.Error(), "parse reporter.ts") {
+		t.Fatalf("TypeScript scan error = %v", err)
+	}
+}
+
 func gitForScan(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
