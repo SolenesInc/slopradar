@@ -29,6 +29,8 @@ func writeDiffMarkdown(output io.Writer, result model.Diff) error {
 	w.line("## slopradar")
 	w.line("")
 	writeHeadline(w, result)
+	w.line("")
+	writeBucketSummary(w, result)
 	if len(result.Trend) != 0 {
 		w.line("")
 		writeSparklines(w, result.Trend)
@@ -37,10 +39,10 @@ func writeDiffMarkdown(output io.Writer, result model.Diff) error {
 	w.line("<details>")
 	w.line("<summary>%d functions changed mass</summary>", len(result.Functions))
 	w.line("")
-	w.line("| function | bucket | CC before → after | SLOC before → after | Δmass | note |")
+	w.line("| function | bucket before → after | CC before → after | SLOC before → after | Δmass | note |")
 	w.line("|---|---|---:|---:|---:|---|")
 	for _, function := range result.Functions {
-		w.line("| <code>%s</code> in <code>%s</code> | %s | %s → %s | %s → %s | %+.3f | %s |", markdownInline(function.Name), markdownInline(function.File), deltaBucket(function), metric(function.Before, func(item *model.Function) int { return item.CC }), metric(function.After, func(item *model.Function) int { return item.CC }), metric(function.Before, func(item *model.Function) int { return item.SLOC }), metric(function.After, func(item *model.Function) int { return item.SLOC }), function.DeltaMass, markdownInline(function.Note))
+		w.line("| <code>%s</code> in <code>%s</code> | %s → %s | %s → %s | %s → %s | %+.3f | %s |", markdownInline(function.Name), markdownInline(function.File), functionBucketMetric(function.Before), functionBucketMetric(function.After), metric(function.Before, func(item *model.Function) int { return item.CC }), metric(function.After, func(item *model.Function) int { return item.CC }), metric(function.Before, func(item *model.Function) int { return item.SLOC }), metric(function.After, func(item *model.Function) int { return item.SLOC }), function.DeltaMass, markdownInline(function.Note))
 	}
 	w.line("")
 	w.line("</details>")
@@ -58,17 +60,26 @@ func writeDiffMarkdown(output io.Writer, result model.Diff) error {
 func writeHeadline(w *markdownWriter, result model.Diff) {
 	added, removed := totalMass(result)
 	cloneDelta := len(result.ClonesAdded) - len(result.ClonesRemoved)
-	if added == 0 && removed == 0 && cloneDelta == 0 && len(result.Functions) == 0 {
+	if added == 0 && removed == 0 && len(result.ClonesAdded) == 0 && len(result.ClonesRemoved) == 0 && len(result.Functions) == 0 {
 		w.line("```diff")
 		w.line("  No complexity or clone changes detected.")
 		w.line("```")
 		return
 	}
 	w.line("```diff")
-	w.line("+ %.3f mass added to functions over CC 10%s", added, contributor(result.Functions, true))
-	w.line("- %.3f mass removed from functions over CC 10%s", removed, contributor(result.Functions, false))
-	w.line("± %s clone pairs", signed(cloneDelta))
+	w.line("+ %.3f source mass added to functions over CC 10%s", added, contributor(result.Functions, true))
+	w.line("- %.3f source mass removed from functions over CC 10%s", removed, contributor(result.Functions, false))
+	w.line("± %s clone pairs (%d introduced, %d removed)", signed(cloneDelta), len(result.ClonesAdded), len(result.ClonesRemoved))
 	w.line("```")
+}
+
+func writeBucketSummary(w *markdownWriter, result model.Diff) {
+	w.line("| bucket | mass added over CC 10 | mass removed over CC 10 | clone lines in touched files |")
+	w.line("|---|---:|---:|---:|")
+	for _, bucket := range buckets() {
+		delta := result.Buckets[bucket]
+		w.line("| %s | +%.3f | -%.3f | %d → %d |", bucket, delta.MassAddedOverCC10, delta.MassRemovedOverCC10, delta.CloneLinesTouchedBefore, delta.CloneLinesTouchedAfter)
+	}
 }
 
 func totalMass(result model.Diff) (float64, float64) {
@@ -108,11 +119,11 @@ func functionBucket(function model.Function) model.Bucket {
 	return function.Bucket
 }
 
-func deltaBucket(function model.FunctionDelta) model.Bucket {
-	if function.After != nil {
-		return functionBucket(*function.After)
+func functionBucketMetric(function *model.Function) string {
+	if function == nil {
+		return "·"
 	}
-	return functionBucket(*function.Before)
+	return string(functionBucket(*function))
 }
 
 func signed(value int) string {

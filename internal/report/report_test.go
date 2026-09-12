@@ -2,6 +2,8 @@ package report
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -80,5 +82,42 @@ func TestDiffTextUsesColorWhenEnabled(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "\x1b[32m+2.000\x1b[0m") || !strings.Contains(output.String(), "\x1b[31m-1.000\x1b[0m") {
 		t.Fatalf("colored output = %q", output.String())
+	}
+}
+
+func TestMarkdownTestOnlyChangeGolden(t *testing.T) {
+	function := model.NewFunction("only_test.go", "TestOnly", 1, 12, 9, nil)
+	function.Bucket = model.Tests
+	result := model.Diff{
+		Buckets: map[model.Bucket]model.BucketDelta{
+			model.Source: {},
+			model.Tests:  {MassAddedOverCC10: function.Mass, CloneLinesTouchedBefore: 4, CloneLinesTouchedAfter: 5},
+		},
+		Functions: []model.FunctionDelta{{File: function.File, Name: function.Name, After: &function, DeltaMass: function.Mass, Note: "new"}},
+	}
+	assertMarkdownGolden(t, "test-only.md", result)
+}
+
+func TestMarkdownEqualNetCloneChurnGolden(t *testing.T) {
+	result := model.Diff{
+		Buckets:       map[model.Bucket]model.BucketDelta{model.Source: {}, model.Tests: {}},
+		ClonesAdded:   []model.ClonePair{{A: model.Range{File: "a.go", Start: 1, End: 5}, B: model.Range{File: "b.go", Start: 2, End: 6}}},
+		ClonesRemoved: []model.ClonePair{{A: model.Range{File: "c.go", Start: 3, End: 7}, B: model.Range{File: "d.go", Start: 4, End: 8}}},
+	}
+	assertMarkdownGolden(t, "clone-churn.md", result)
+}
+
+func assertMarkdownGolden(t *testing.T, name string, result model.Diff) {
+	t.Helper()
+	var output strings.Builder
+	if err := WriteDiff(&output, "md", result, false); err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile(filepath.Join("..", "..", "testdata", "report", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output.String() != string(want) {
+		t.Fatalf("%s differs\n%s", name, output.String())
 	}
 }
