@@ -169,6 +169,18 @@ The Vitest and other TypeScript receipt directories omit declaration files, as
 the prototype did. The attn TypeScript receipt also excludes its unmarked
 `app/src/types/generated.ts`; a default scan includes unmarked generated output.
 
+The Go standard-library result is the shipped output, not a claim of complete
+Go 1.27 parser parity. The scan reports recoverable-syntax warnings for
+`cmd/compile/internal/types2/trie_test.go`,
+`encoding/json/v2/arshal_test.go`, `math/rand/v2/rand.go`,
+`net/http/internal/http2/server.go`, `runtime/secret/secret_test.go`, and
+`runtime/traceback_test.go`. Those files use Go 1.27 syntax absent from the
+pinned tree-sitter grammar: generalized `new(expression)` and generic methods.
+The `net/http` row includes its `internal/http2/server.go` warning. The standard
+library scan also names generated `cmd/compile/internal/ssa/opGen.go` and
+`cmd/compile/internal/ssa/rewriteAMD64.go` as skipped above the documented file
+size tripwire.
+
 ## What it is not
 
 - No merge gate or quality ratchet.
