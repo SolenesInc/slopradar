@@ -13,14 +13,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Read Rust toolchain pin
-        id: rust-toolchain
+        id: rust_toolchain
         shell: bash
         run: |
           channel=$(sed -n 's/^channel = "\([^"]*\)"/\1/p' internal/oxc/rust/rust-toolchain.toml)
           test -n "$channel"
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
       - name: Install pinned Rust toolchain
-        run: rustup toolchain install "${{ steps.rust-toolchain.outputs.channel }}" --profile minimal --component rust-docs
+        run: rustup toolchain install "${{ steps.rust_toolchain.outputs.channel }}" --profile minimal --component rust-docs
       - run: python3 scripts/collect-oxc-licenses.py --check
 
   test:
