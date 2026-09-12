@@ -1,9 +1,10 @@
 {
   "platform": "linux_amd64",
   "rust_target": "x86_64-unknown-linux-gnu",
+  "toolchain": "1.96.0",
   "compiler": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2",
-  "source_sha256": "6689746710f36b452a0900f000f9585e345c6f48647d3e72d216f947d84228bf",
-  "build_script_sha256": "d83b4fb6077971703d9f86d0b38096f661c0e622ce8a4ec35988d9d0f50b0c6e",
+  "source_sha256": "2e1fde5f600e7af12f40ddf37d8f00df2c6868bf5b0bfaf4ffc3e01f0a5e5db2",
+  "build_script_sha256": "c6ecaa0927c521c169a1c356e2c8c235160b80fb3fd90bfb45f279ec9c5e536d",
   "cargo_lock_sha256": "9b738e58a28530f5fb6bd64e9240f8abc095f5aa91fe902afbcfca18717fa899",
   "archive": "libslopradar_oxc.a",
   "archive_bytes": 47280976,
