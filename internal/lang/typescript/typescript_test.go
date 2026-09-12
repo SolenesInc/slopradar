@@ -139,6 +139,29 @@ func TestAnalyzePreservesOriginalTokensAndAssignmentNames(t *testing.T) {
 	}
 }
 
+func TestAnalyzeConsumesOwnershipHintsAtFunctionBoundaries(t *testing.T) {
+	result, err := Analyze("ownership.ts", []byte(`
+const outer = () => () => 1
+const parent = () => {
+  const child = () => 2
+  return child
+}
+factory(() => () => 3)
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Functions) != 3 {
+		t.Fatalf("functions = %#v", result.Functions)
+	}
+	want := [][]string{{"outer", "(anonymous)"}, {"parent", "child"}, {"cb:factory", "(anonymous)"}}
+	for i, names := range want {
+		if result.Functions[i].Name != names[0] || len(result.Functions[i].Nested) != 1 || result.Functions[i].Nested[0].Name != names[1] {
+			t.Fatalf("functions[%d] = %#v, want %q with nested %q", i, result.Functions[i], names[0], names[1])
+		}
+	}
+}
+
 func TestAnalyzeTSXAndJavaScript(t *testing.T) {
 	root := filepath.Join("..", "..", "..", "testdata", "typescript")
 	for _, name := range []string{"component.tsx", "browser.js"} {

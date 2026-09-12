@@ -380,13 +380,17 @@ impl<'a> Visit<'a> for MetricVisitor<'_> {
             .as_ref()
             .map_or_else(|| self.hint(), |identifier| identifier.name.to_string());
         self.start_function(name, function.span);
-        walk::walk_function(self, function, flags);
+        self.with_hint("(anonymous)".to_string(), |visitor| {
+            walk::walk_function(visitor, function, flags)
+        });
         self.finish_function();
     }
 
     fn visit_arrow_function_expression(&mut self, function: &ArrowFunctionExpression<'a>) {
         self.start_function(self.hint(), function.span);
-        walk::walk_arrow_function_expression(self, function);
+        self.with_hint("(anonymous)".to_string(), |visitor| {
+            walk::walk_arrow_function_expression(visitor, function)
+        });
         self.finish_function();
     }
 
@@ -523,6 +527,20 @@ mod tests {
             "cb:extremelyLongCallbackCalleeNameThatMustRemainVisible"
         );
         assert_eq!(analysis.functions[3].name, "cb:Promise");
+    }
+
+    #[test]
+    fn consumes_ownership_hints_at_function_boundaries() {
+        let analysis = analyze_source(
+            "valid.ts",
+            "const outer = () => () => 1; const parent = () => { const child = () => 2; return child; }; factory(() => () => 3);",
+        );
+        assert_eq!(analysis.functions[0].name, "outer");
+        assert_eq!(analysis.functions[0].nested[0].name, "(anonymous)");
+        assert_eq!(analysis.functions[1].name, "parent");
+        assert_eq!(analysis.functions[1].nested[0].name, "child");
+        assert_eq!(analysis.functions[2].name, "cb:factory");
+        assert_eq!(analysis.functions[2].nested[0].name, "(anonymous)");
     }
 
     #[test]
