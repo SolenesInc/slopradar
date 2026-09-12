@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -22,9 +23,17 @@ def output(arguments, **kwargs):
     return subprocess.check_output(arguments, text=True, **kwargs).strip()
 
 
+def toolchain(crate):
+    configuration = (crate / "rust-toolchain.toml").read_text()
+    match = re.search(r'^channel\s*=\s*"([^"]+)"', configuration, re.MULTILINE)
+    if match is None:
+        raise SystemExit("rust-toolchain.toml does not declare channel")
+    return match.group(1)
+
+
 def fingerprint(crate):
     digest = hashlib.sha256()
-    files = sorted([crate / "Cargo.toml", crate / "Cargo.lock", *crate.glob("src/**/*.rs")])
+    files = sorted([crate / "Cargo.toml", crate / "Cargo.lock", crate / "rust-toolchain.toml", *crate.glob("src/**/*.rs")])
     for file in files:
         digest.update(str(file.relative_to(crate)).encode() + b"\0")
         digest.update(file.read_bytes())
@@ -32,14 +41,19 @@ def fingerprint(crate):
 
 
 def check(bridge, platforms):
-    source_hash = fingerprint(bridge / "rust")
+    crate = bridge / "rust"
+    source_hash = fingerprint(crate)
     recipe_hash = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    rust = toolchain(crate)
     for platform in platforms:
         destination = bridge / "lib" / platform
         receipt = json.loads((destination / "provenance.json").read_text())
         archive = destination / receipt["archive"]
         archive_hash = hashlib.sha256(archive.read_bytes()).hexdigest()
         marker = (bridge / ("archive_" + platform + ".go")).read_text()
+        compiler_release = next((line.removeprefix("release: ") for line in receipt["compiler"].splitlines() if line.startswith("release: ")), None)
+        if receipt.get("toolchain") != rust or compiler_release != rust:
+            raise SystemExit(platform + ": provenance compiler does not match rust-toolchain.toml; rebuild with scripts/build-oxc.py")
         if receipt["source_sha256"] != source_hash or receipt["build_script_sha256"] != recipe_hash:
             raise SystemExit(platform + ": native archive is stale; rebuild with scripts/build-oxc.py")
         if archive_hash != receipt["archive_sha256"] or archive_hash not in marker:
@@ -59,8 +73,8 @@ def main():
     if args.check:
         check(bridge, args.target or TARGETS)
         return
-    toolchain = "1.96.0"
-    cargo = ["cargo", "+" + toolchain]
+    rust = toolchain(crate)
+    cargo = ["cargo", "+" + rust]
     metadata = json.loads(output(cargo + ["metadata", "--locked", "--no-deps", "--format-version", "1", "--manifest-path", str(crate / "Cargo.toml")]))
     package = next(p for p in metadata["packages"] if Path(p["manifest_path"]).parent == crate)
     library = next(t["name"] for t in package["targets"] if "staticlib" in t["crate_types"])
@@ -73,7 +87,7 @@ def main():
         "--remap-path-prefix=" + str(root) + "=slopradar",
         "--remap-path-prefix=" + str(cargo_home) + "=cargo",
     ])
-    compiler = output(["rustc", "+" + toolchain, "--version", "--verbose"])
+    compiler = output(["rustc", "+" + rust, "--version", "--verbose"])
     for platform in args.target or TARGETS:
         target = TARGETS[platform]
         if fingerprint(crate) != source_hash:
@@ -88,6 +102,7 @@ def main():
         receipt = {
             "platform": platform,
             "rust_target": target,
+            "toolchain": rust,
             "compiler": compiler,
             "source_sha256": source_hash,
             "build_script_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
@@ -97,7 +112,7 @@ def main():
             "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
         }
         if platform.startswith("darwin_"):
-            receipt["deployment_target"] = output(["rustc", "+" + toolchain, "--print", "deployment-target", "--target", target], env=environment)
+            receipt["deployment_target"] = output(["rustc", "+" + rust, "--print", "deployment-target", "--target", target], env=environment)
         (destination / "provenance.json").write_text(json.dumps(receipt, indent=2) + "\n")
         go_os, go_arch = platform.split("_")
         (bridge / ("archive_" + platform + ".go")).write_text(
