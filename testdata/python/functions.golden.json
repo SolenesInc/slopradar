@@ -1,0 +1,36 @@
+[
+  {
+    "file": "testdata/python/functions.py",
+    "name": "inspect",
+    "line": 1,
+    "cc": 15,
+    "sloc": 15,
+    "mass": 58.09475019311125,
+    "nested": [
+      {
+        "file": "testdata/python/functions.py",
+        "name": "normalize",
+        "line": 4,
+        "cc": 3,
+        "sloc": 2,
+        "mass": 4.242640687119286
+      }
+    ]
+  },
+  {
+    "file": "testdata/python/functions.py",
+    "name": "Worker.run",
+    "line": 22,
+    "cc": 4,
+    "sloc": 6,
+    "mass": 9.797958971132712
+  },
+  {
+    "file": "testdata/python/functions.py",
+    "name": "transform",
+    "line": 30,
+    "cc": 2,
+    "sloc": 1,
+    "mass": 2
+  }
+]
