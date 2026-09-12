@@ -159,6 +159,11 @@ func countSLOC(source []byte, start, end int, comments []Span) int {
 }
 
 func CountLines(source []byte, comments, testSpans []Span) map[model.Bucket]int {
+	lines := SourceLines(source, comments, testSpans)
+	return map[model.Bucket]int{model.Source: len(lines[model.Source]), model.Tests: len(lines[model.Tests])}
+}
+
+func SourceLines(source []byte, comments, testSpans []Span) map[model.Bucket][]int {
 	content := append([]byte(nil), source...)
 	for _, comment := range comments {
 		for i := comment.StartByte; i < comment.EndByte; i++ {
@@ -167,8 +172,9 @@ func CountLines(source []byte, comments, testSpans []Span) map[model.Bucket]int 
 			}
 		}
 	}
-	counts := map[model.Bucket]int{model.Source: 0, model.Tests: 0}
+	lines := map[model.Bucket][]int{model.Source: {}, model.Tests: {}}
 	lineStart := 0
+	lineNumber := 1
 	for lineStart <= len(content) {
 		lineEnd := bytes.IndexByte(content[lineStart:], '\n')
 		if lineEnd < 0 {
@@ -184,12 +190,13 @@ func CountLines(source []byte, comments, testSpans []Span) map[model.Bucket]int 
 					break
 				}
 			}
-			counts[bucket]++
+			lines[bucket] = append(lines[bucket], lineNumber)
 		}
 		if lineEnd == len(content) {
 			break
 		}
 		lineStart = lineEnd + 1
+		lineNumber++
 	}
-	return counts
+	return lines
 }

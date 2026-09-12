@@ -57,6 +57,25 @@ func TestWriteTextIncludesSkipLimitAndAsk(t *testing.T) {
 	}
 }
 
+func TestWriteTextIncludesClonePairs(t *testing.T) {
+	snapshot := model.Snapshot{
+		Rev: "abc",
+		Buckets: map[model.Bucket]model.Totals{
+			model.Source: {SourceLines: 8, CloneLines: 4, CloneShare: 0.5},
+			model.Tests:  {},
+		},
+		Clones: []model.ClonePair{{
+			ID: "stable", A: model.Range{File: "a.go", Start: 2, End: 5}, B: model.Range{File: "b.go", Start: 7, End: 10}, Tokens: 50, Lines: 4,
+		}},
+	}
+	var output bytes.Buffer
+	writeText(&output, snapshot)
+	want := "stable\ta.go\t2\t5\tb.go\t7\t10\t50\t4\n"
+	if !bytes.Contains(output.Bytes(), []byte(want)) {
+		t.Fatalf("output = %q, want %q", output.String(), want)
+	}
+}
+
 func writeFile(t *testing.T, root, name, content string) {
 	t.Helper()
 	file := filepath.Join(root, name)

@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/SolenesInc/slopradar/internal/clones"
 	"github.com/SolenesInc/slopradar/internal/gitread"
 	"github.com/SolenesInc/slopradar/internal/lang"
 	"github.com/SolenesInc/slopradar/internal/lang/golang"
@@ -19,7 +20,10 @@ import (
 	"github.com/SolenesInc/slopradar/internal/model"
 )
 
-type analyzer func(string, []byte) (lang.Result, error)
+type analyzer struct {
+	language string
+	run      func(string, []byte) (lang.Result, error)
+}
 
 func Directory(root string) (model.Snapshot, error) {
 	config, err := directoryConfig(root)
@@ -107,13 +111,14 @@ func blobsWithConfig(rev string, blobs []gitread.Blob, config model.Config, skip
 	blobs = append([]gitread.Blob(nil), blobs...)
 	sort.Slice(blobs, func(i, j int) bool { return blobs[i].Path < blobs[j].Path })
 	snapshot := model.Snapshot{
-		Rev: rev, Functions: []model.Function{}, Clones: []model.ClonePair{},
+		Rev: rev, Functions: []model.Function{}, Clones: []model.ClonePair{}, CloneCoverage: []model.CloneCoverage{},
 		Buckets: map[model.Bucket]model.Totals{model.Source: {}, model.Tests: {}}, Skipped: []string{}, SkippedDetails: append([]model.SkippedFile(nil), skipped...), Warnings: []string{},
 	}
 	for _, item := range skipped {
 		snapshot.Skipped = append(snapshot.Skipped, item.File)
 	}
 	functions := map[model.Bucket][]model.Function{model.Source: {}, model.Tests: {}}
+	cloneFiles := []clones.File{}
 	for _, blob := range blobs {
 		classification := model.Classify(blob.Path, blob.Content, config)
 		if classification.Excluded || classification.Generated {
@@ -128,21 +133,26 @@ func blobsWithConfig(rev string, blobs []gitread.Blob, config model.Config, skip
 		if !ok {
 			continue
 		}
-		result, err := analyze(blob.Path, blob.Content)
+		result, err := analyze.run(blob.Path, blob.Content)
 		if err != nil {
 			return model.Snapshot{}, err
 		}
 		snapshot.Warnings = append(snapshot.Warnings, result.Warnings...)
-		lineCounts := lang.CountLines(blob.Content, result.Comments, result.TestSpans)
+		sourceLines := lang.SourceLines(blob.Content, result.Comments, result.TestSpans)
 		if classification.Bucket == model.Tests {
-			lineCounts[model.Tests] += lineCounts[model.Source]
-			lineCounts[model.Source] = 0
+			sourceLines[model.Tests] = append(sourceLines[model.Tests], sourceLines[model.Source]...)
+			sort.Ints(sourceLines[model.Tests])
+			sourceLines[model.Source] = nil
+			for i := range result.Tokens {
+				result.Tokens[i].Bucket = model.Tests
+			}
 		}
-		for bucket, count := range lineCounts {
+		for bucket, lines := range sourceLines {
 			totals := snapshot.Buckets[bucket]
-			totals.SourceLines += count
+			totals.SourceLines += len(lines)
 			snapshot.Buckets[bucket] = totals
 		}
+		cloneFiles = append(cloneFiles, clones.File{Path: blob.Path, Language: analyze.language, Tokens: result.Tokens, SourceLines: sourceLines})
 		for i, function := range result.Functions {
 			bucket := classification.Bucket
 			if bucket == model.Source && i < len(result.FunctionBuckets) {
@@ -152,9 +162,16 @@ func blobsWithConfig(rev string, blobs []gitread.Blob, config model.Config, skip
 			snapshot.Functions = append(snapshot.Functions, withBucket(function, bucket))
 		}
 	}
+	cloneResult := clones.Detect(cloneFiles)
+	snapshot.Clones = cloneResult.Pairs
+	snapshot.CloneCoverage = cloneResult.Coverage
 	for _, bucket := range []model.Bucket{model.Source, model.Tests} {
 		totals := model.Summarize(functions[bucket])
 		totals.SourceLines = snapshot.Buckets[bucket].SourceLines
+		totals.CloneLines = cloneResult.Total[bucket]
+		if totals.SourceLines != 0 {
+			totals.CloneShare = float64(totals.CloneLines) / float64(totals.SourceLines)
+		}
 		snapshot.Buckets[bucket] = totals
 	}
 	sort.Slice(snapshot.Functions, func(i, j int) bool {
@@ -232,15 +249,15 @@ func configFrom(blobs []gitread.Blob) (model.Config, error) {
 func analyzerFor(file string) (analyzer, bool) {
 	switch strings.ToLower(path.Ext(file)) {
 	case ".go":
-		return golang.Analyze, true
+		return analyzer{language: "go", run: golang.Analyze}, true
 	case ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs":
-		return typescript.Analyze, true
+		return analyzer{language: "typescript", run: typescript.Analyze}, true
 	case ".py":
-		return python.Analyze, true
+		return analyzer{language: "python", run: python.Analyze}, true
 	case ".rs":
-		return rust.Analyze, true
+		return analyzer{language: "rust", run: rust.Analyze}, true
 	default:
-		return nil, false
+		return analyzer{}, false
 	}
 }
 

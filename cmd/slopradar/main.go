@@ -85,6 +85,10 @@ func writeText(output io.Writer, snapshot model.Snapshot) {
 		totals := snapshot.Buckets[bucket]
 		fmt.Fprintf(output, "%s\t%d\t%.6f\t%.6f\t%.6f\t%d\t%d\t%.6f\n", bucket, totals.Functions, totals.Mass, totals.MassOverCC10, totals.Erosion, totals.SourceLines, totals.CloneLines, totals.CloneShare)
 	}
+	fmt.Fprintln(output, "clone_id\tfile_a\tstart_a\tend_a\tfile_b\tstart_b\tend_b\ttokens\tlines")
+	for _, pair := range snapshot.Clones {
+		fmt.Fprintf(output, "%s\t%s\t%d\t%d\t%s\t%d\t%d\t%d\t%d\n", pair.ID, pair.A.File, pair.A.Start, pair.A.End, pair.B.File, pair.B.Start, pair.B.End, pair.Tokens, pair.Lines)
+	}
 	fmt.Fprintln(output, "file\tline\tbucket\tname\tcc\tsloc\tmass")
 	for _, function := range snapshot.Functions {
 		writeFunction(output, function, "")

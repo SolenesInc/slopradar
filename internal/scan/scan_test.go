@@ -92,3 +92,80 @@ function broken(`)
 		t.Fatalf("snapshot = %#v, error = %v", snapshot, err)
 	}
 }
+
+func TestDirectoryFindsCloneFixtures(t *testing.T) {
+	snapshot, err := Directory(filepath.Join("..", "..", "testdata", "clones"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []model.ClonePair{
+		{
+			ID: "02b2ebbff4aafe5192df9f1c0819880b1af3d514d83d81d12b4b4fd095b0e9d4",
+			A:  model.Range{File: "comments/a.go", Start: 3, End: 14},
+			B:  model.Range{File: "comments/b.go", Start: 3, End: 15}, Tokens: 51, Lines: 11,
+		},
+		{
+			ID: "65820221732a816b01e43fe89a8e33a4a52832b5f909da51f0495757d5de51b4",
+			A:  model.Range{File: "exact/a.go", Start: 3, End: 13},
+			B:  model.Range{File: "exact/b.go", Start: 3, End: 13}, Tokens: 51, Lines: 11,
+		},
+		{
+			ID: "f1e16af3db28919ad77a0a1c6cd7bc7683c2c777e05aa429f62b2f032d587da5",
+			A:  model.Range{File: "same/same.go", Start: 3, End: 15},
+			B:  model.Range{File: "same/same.go", Start: 17, End: 29}, Tokens: 59, Lines: 13,
+		},
+	}
+	if !reflect.DeepEqual(snapshot.Clones, want) {
+		t.Fatalf("clones = %#v, want %#v", snapshot.Clones, want)
+	}
+	if snapshot.Buckets[model.Source].CloneLines != 70 || snapshot.Buckets[model.Source].CloneShare != 70.0/85.0 {
+		t.Fatalf("source totals = %#v", snapshot.Buckets[model.Source])
+	}
+	for _, pair := range snapshot.Clones {
+		if strings.HasPrefix(pair.A.File, "four/") || strings.HasPrefix(pair.B.File, "four/") {
+			t.Fatalf("four-line fixture counted: %#v", pair)
+		}
+	}
+}
+
+func TestBlobsPreservesMixedRustCloneCoverage(t *testing.T) {
+	source := []byte(`fn production(value: i32) -> i32 {
+    let alpha = value + 501;
+    let beta = alpha * 502;
+    let gamma = beta - 503;
+    let delta = gamma / 504;
+    let epsilon = delta + 505;
+    let zeta = epsilon * 506;
+    zeta
+}
+
+#[cfg(test)]
+mod tests {
+    fn fixture(value: i32) -> i32 {
+        let one = value + 601;
+        let two = one * 602;
+        let three = two - 603;
+        let four = three / 604;
+        let five = four + 605;
+        let six = five * 606;
+        six
+    }
+}
+`)
+	snapshot, err := Blobs("mixed", []gitread.Blob{
+		{BlobInfo: gitread.BlobInfo{Path: "src/b.rs", Size: int64(len(source))}, Content: source},
+		{BlobInfo: gitread.BlobInfo{Path: "src/a.rs", Size: int64(len(source))}, Content: source},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Clones) != 1 || snapshot.Clones[0].A.Start != 1 || snapshot.Clones[0].A.End != 22 {
+		t.Fatalf("clones = %#v", snapshot.Clones)
+	}
+	if snapshot.Buckets[model.Source].CloneLines == 0 || snapshot.Buckets[model.Tests].CloneLines == 0 {
+		t.Fatalf("buckets = %#v", snapshot.Buckets)
+	}
+	if len(snapshot.CloneCoverage) != 4 || snapshot.CloneCoverage[0].Bucket != model.Source || snapshot.CloneCoverage[1].Bucket != model.Tests {
+		t.Fatalf("clone coverage = %#v", snapshot.CloneCoverage)
+	}
+}
