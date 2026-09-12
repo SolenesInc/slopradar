@@ -18,7 +18,7 @@ func Analyze(file string, source []byte) (lang.Result, error) {
 		Comment: func(node *sitter.Node, _ []byte) bool {
 			return node.Kind() == "line_comment" || node.Kind() == "block_comment"
 		},
-		TestScope:  isTestModule,
+		TestScope:  isTestScope,
 		ParseError: "invalid Rust syntax",
 	}
 	return lang.Analyze(file, source, rules)
@@ -77,24 +77,47 @@ func name(node *sitter.Node, source []byte) string {
 	return "(anonymous)"
 }
 
-func isTestModule(node *sitter.Node, source []byte) bool {
+func isTestScope(node *sitter.Node, source []byte) bool {
 	if node.Kind() == "attribute_item" {
 		return testAttribute(node, source)
 	}
 	if node.Kind() != "mod_item" && node.Kind() != "function_item" {
 		return false
 	}
-	for sibling := node.PrevNamedSibling(); sibling != nil && sibling.Kind() == "attribute_item"; sibling = sibling.PrevNamedSibling() {
-		if testAttribute(sibling, source) {
-			return true
+	for sibling := node.PrevNamedSibling(); sibling != nil; sibling = sibling.PrevNamedSibling() {
+		switch sibling.Kind() {
+		case "line_comment", "block_comment":
+			continue
+		case "attribute_item":
+			if testAttribute(sibling, source) {
+				return true
+			}
+		default:
+			return false
 		}
 	}
 	return false
 }
 
-func testAttribute(node *sitter.Node, source []byte) bool {
-	attribute := strings.Join(strings.Fields(node.Utf8Text(source)), "")
-	return attribute == "#[test]" || strings.Contains(attribute, "cfg(test)")
+func testAttribute(item *sitter.Node, source []byte) bool {
+	if item == nil || item.Kind() != "attribute_item" || item.NamedChildCount() != 1 {
+		return false
+	}
+	attribute := item.NamedChild(0)
+	if attribute == nil || attribute.Kind() != "attribute" || attribute.NamedChildCount() == 0 {
+		return false
+	}
+	name := attribute.NamedChild(0).Utf8Text(source)
+	arguments := attribute.ChildByFieldName("arguments")
+	value := attribute.ChildByFieldName("value")
+	switch name {
+	case "test":
+		return arguments == nil && value == nil
+	case "cfg":
+		return value == nil && arguments != nil && compact(arguments.Utf8Text(source)) == "(test)"
+	default:
+		return false
+	}
 }
 
 func text(node *sitter.Node, source []byte) string {

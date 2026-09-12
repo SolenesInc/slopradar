@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/SolenesInc/slopradar/internal/lang"
 	"github.com/SolenesInc/slopradar/internal/model"
 )
 
@@ -63,26 +64,37 @@ func TestClassificationCoversRustDefaults(t *testing.T) {
 	}
 }
 
-func TestDirectTestAttributesClassifyFunctionsAndTokens(t *testing.T) {
-	source := []byte(`#[test]
+func TestDirectTestAttributesClassifyFunctionsTokensAndLines(t *testing.T) {
+	source := []byte(`#[doc = "cfg(test)"]
+fn production() {}
+
+#[test]
+// attached test comment
 fn direct_test() {}
 
 #[cfg(test)]
+/* attached configured test comment */
 fn configured_test() {}
-
-fn production() {}
 `)
 	result, err := Analyze("fixture.rs", source)
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantBuckets := []model.Bucket{model.Tests, model.Tests, model.Source}
+	wantBuckets := []model.Bucket{model.Source, model.Tests, model.Tests}
 	if !reflect.DeepEqual(result.FunctionBuckets, wantBuckets) {
 		t.Fatalf("function buckets = %#v, want %#v", result.FunctionBuckets, wantBuckets)
 	}
+	wantTokenBuckets := map[string]model.Bucket{"production": model.Source, "direct_test": model.Tests, "configured_test": model.Tests}
 	for _, token := range result.Tokens {
-		if (token.Text == "direct_test" || token.Text == "configured_test") && token.Bucket != model.Tests {
-			t.Fatalf("test token = %#v", token)
+		if want, ok := wantTokenBuckets[token.Text]; ok && token.Bucket != want {
+			t.Fatalf("token = %#v, want bucket %q", token, want)
 		}
+	}
+	lines := lang.SourceLines(source, result.Comments, result.TestSpans)
+	if want := []int{1, 2}; !reflect.DeepEqual(lines[model.Source], want) {
+		t.Fatalf("source lines = %#v, want %#v", lines[model.Source], want)
+	}
+	if want := []int{4, 6, 8, 10}; !reflect.DeepEqual(lines[model.Tests], want) {
+		t.Fatalf("test lines = %#v, want %#v", lines[model.Tests], want)
 	}
 }
