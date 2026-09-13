@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,7 +29,7 @@ func TestActionSourcePathIsCanonical(t *testing.T) {
 	}
 }
 
-func TestActionReportFetchesBaseAndWritesMarkdownSummary(t *testing.T) {
+func TestActionReportFetchesBaseAndWritesMarkdown(t *testing.T) {
 	root := t.TempDir()
 	remote := filepath.Join(root, "remote.git")
 	repository := filepath.Join(root, "repository")
@@ -71,14 +70,13 @@ func TestActionReportFetchesBaseAndWritesMarkdownSummary(t *testing.T) {
 	}
 
 	reportPath := filepath.Join(root, "report.md")
-	summaryPath := filepath.Join(root, "summary.md")
 	scriptPath, err := filepath.Abs(filepath.Join("..", "..", "scripts", "action-report.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	command := exec.Command("bash", scriptPath, "main", "0", reportPath)
 	command.Dir = checkout
-	command.Env = append(os.Environ(), "PATH="+filepath.Dir(binary)+string(os.PathListSeparator)+os.Getenv("PATH"), "GITHUB_STEP_SUMMARY="+summaryPath)
+	command.Env = append(os.Environ(), "PATH="+filepath.Dir(binary)+string(os.PathListSeparator)+os.Getenv("PATH"))
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("action report: %v\n%s", err, output)
 	}
@@ -86,13 +84,6 @@ func TestActionReportFetchesBaseAndWritesMarkdownSummary(t *testing.T) {
 	report, err := os.ReadFile(reportPath)
 	if err != nil {
 		t.Fatal(err)
-	}
-	summary, err := os.ReadFile(summaryPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(report, summary) {
-		t.Fatalf("summary does not match report\nreport: %s\nsummary: %s", report, summary)
 	}
 	if !strings.HasPrefix(string(report), "<!-- slopradar -->\n") || !strings.Contains(string(report), "complex") || !strings.Contains(string(report), "CC 12") {
 		t.Fatalf("report = %s", report)
@@ -103,14 +94,13 @@ func TestActionReportTreatsBaseAsData(t *testing.T) {
 	root := t.TempDir()
 	touched := filepath.Join(root, "injected")
 	reportPath := filepath.Join(root, "report.md")
-	summaryPath := filepath.Join(root, "summary.md")
 	scriptPath, err := filepath.Abs(filepath.Join("..", "..", "scripts", "action-report.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	command := exec.Command("bash", scriptPath, "main;touch "+touched, "0", reportPath)
 	command.Dir = root
-	command.Env = append(os.Environ(), "GITHUB_STEP_SUMMARY="+summaryPath)
+	command.Env = os.Environ()
 	output, err := command.CombinedOutput()
 	if err == nil || !strings.Contains(string(output), "base input is not a valid branch name") {
 		t.Fatalf("error = %v, output = %q", err, output)

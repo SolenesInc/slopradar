@@ -1,6 +1,6 @@
 const fs = require("node:fs")
 
-const marker = "<!-- slopradar -->"
+const {commentForReport, githubCommentMaxUTF16CodeUnits, marker} = require("./report-bounds.cjs")
 
 module.exports = async function upsertComment({
   github,
@@ -8,6 +8,7 @@ module.exports = async function upsertComment({
   core,
   reportPath,
   commentEnabled,
+  runUrl,
 }) {
   if (commentEnabled !== "true" && commentEnabled !== "false") {
     throw new Error(`comment must be true or false, got: ${commentEnabled}`)
@@ -32,10 +33,14 @@ module.exports = async function upsertComment({
     return
   }
 
-  const body = fs.readFileSync(reportPath, "utf8")
-  if (!body.startsWith(marker)) {
-    throw new Error(`slopradar report must start with ${marker}`)
+  const report = fs.readFileSync(reportPath, "utf8")
+  const bounded = commentForReport(report, runUrl)
+  if (bounded.overflow) {
+    core.warning(
+      `slopradar report exceeds the pull request comment limit: max_comment_utf16_code_units=${githubCommentMaxUTF16CodeUnits}, asked_comment_utf16_code_units=${bounded.asked}; linking the full workflow report`,
+    )
   }
+  const body = bounded.body
 
   const request = {
     owner: context.repo.owner,

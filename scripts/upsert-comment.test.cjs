@@ -4,7 +4,10 @@ const os = require("node:os")
 const path = require("node:path")
 const test = require("node:test")
 
+const {githubCommentMaxUTF16CodeUnits} = require("./report-bounds.cjs")
 const upsertComment = require("./upsert-comment.cjs")
+
+const runUrl = "https://github.com/SolenesInc/slopradar/actions/runs/1"
 
 function issueAPI() {
   const comments = []
@@ -113,4 +116,31 @@ test("makes a comment permission failure actionable", async (t) => {
     }),
     /HTTP 403; ensure the workflow grants pull-requests: write/,
   )
+})
+
+test("upserts a bounded structural comment while preserving the report file", async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "slopradar-comment-"))
+  t.after(() => fs.rmSync(directory, {recursive: true}))
+  const reportPath = path.join(directory, "report.md")
+  const headline = "<!-- slopradar -->\n## slopradar\n\n```diff\n+ 12.000 mass added\n```\n"
+  const report = `${headline}\n<details>\n${"x".repeat(githubCommentMaxUTF16CodeUnits)}\n</details>\n`
+  fs.writeFileSync(reportPath, report)
+  const api = issueAPI()
+  const warnings = []
+
+  await upsertComment({
+    github: api.github,
+    context: pullRequestContext(),
+    core: {info: () => {}, warning: (message) => warnings.push(message)},
+    reportPath,
+    commentEnabled: "true",
+    runUrl,
+  })
+
+  assert.equal(fs.readFileSync(reportPath, "utf8"), report)
+  assert.equal(api.comments.length, 1)
+  assert.ok(api.comments[0].body.startsWith(headline))
+  assert.doesNotMatch(api.comments[0].body, /<details>/)
+  assert.ok(api.comments[0].body.length <= githubCommentMaxUTF16CodeUnits)
+  assert.match(warnings[0], /max_comment_utf16_code_units=65536/)
 })

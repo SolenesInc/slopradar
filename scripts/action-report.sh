@@ -36,4 +36,3 @@ if [[ "$trend_months" != "0" ]]; then
   diff_args+=(--trend "$trend_months")
 fi
 slopradar "${diff_args[@]}" > "$report_path"
-cat "$report_path" >> "$GITHUB_STEP_SUMMARY"
