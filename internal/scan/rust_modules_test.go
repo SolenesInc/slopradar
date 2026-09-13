@@ -2,6 +2,7 @@ package scan
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -36,6 +37,10 @@ func TestRustExternalModuleScopes(t *testing.T) {
 
 		{"configured test path", map[string]string{".slopradar.json": `{"test_globs":["src/helpers.rs"]}`, "src/lib.rs": "mod helpers;", "src/helpers.rs": "mod child; fn helper() {}", "src/helpers/child.rs": "fn child() {}"}, []string{"src/helpers.rs", "src/helpers/child.rs"}, false},
 		{"absolute path stays outside snapshot", map[string]string{"src/lib.rs": "#[cfg(test)] #[path=\"/helpers.rs\"] mod helpers;", "src/helpers.rs": "fn helper() {}"}, nil, true},
+
+		{"excluded target", map[string]string{".slopradar.json": `{"excludes":["src/bindings.rs"]}`, "src/lib.rs": "mod bindings; fn public() {}", "src/bindings.rs": "fn binding() {}"}, nil, false},
+		{"generated target", map[string]string{"src/lib.rs": "mod bindings; fn public() {}", "src/bindings.rs": "// @generated\nfn binding() {}"}, nil, false},
+		{"excluded directory", map[string]string{".slopradar.json": `{"excludes":["src/generated/"]}`, "src/lib.rs": "#[path=\"generated/bindings.rs\"] mod bindings; fn public() {}", "src/generated/bindings.rs": "fn binding() {}"}, nil, false},
 		{"missing", map[string]string{"src/lib.rs": "#[cfg(test)] mod missing;", "src/other.rs": "fn other() {}"}, nil, true},
 		{"ambiguous layouts", map[string]string{"src/lib.rs": "#[cfg(test)] mod helpers;", "src/helpers.rs": "fn helper() {}", "src/helpers/mod.rs": "fn helper() {}"}, nil, true},
 		{"conditional path", map[string]string{"src/lib.rs": "#[cfg(test)] #[cfg_attr(unix, path=\"other.rs\")] mod helpers;", "src/helpers.rs": "fn helper() {}", "src/other.rs": "fn other() {}"}, nil, true},
@@ -147,5 +152,51 @@ func TestRustParentChangeReclassifiesCachedChildrenAndDiff(t *testing.T) {
 	}
 	if change.Buckets[model.Source].MassRemovedOverCC10 == 0 || change.Buckets[model.Tests].MassAddedOverCC10 == 0 {
 		t.Fatalf("delta buckets = %v", change.Buckets)
+	}
+}
+
+func TestIgnoredRustModulesAllowDirectoryAndGitReports(t *testing.T) {
+	for _, kind := range []string{"generated", "excluded", "excluded-directory"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			gitForScan(t, dir, "init", "-b", "main")
+			gitForScan(t, dir, "config", "user.name", "Slopradar Test")
+			gitForScan(t, dir, "config", "user.email", "test@slopradar.invalid")
+			target := "bindings.rs"
+			content := "fn bindings() {}\n"
+			if kind == "generated" {
+				content = "// @generated\n" + content
+			}
+			if kind == "excluded" {
+				writeScanFile(t, dir, model.ConfigFile, `{"excludes":["bindings.rs"]}`)
+			}
+			if kind == "excluded-directory" {
+				target = "generated/bindings.rs"
+				if err := os.Mkdir(filepath.Join(dir, "generated"), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				writeScanFile(t, dir, model.ConfigFile, `{"excludes":["generated/"]}`)
+			}
+			writeScanFile(t, dir, target, content)
+			writeScanFile(t, dir, "lib.rs", fmt.Sprintf("#[path=%q] mod bindings; fn public() {}\n", target))
+			gitForScan(t, dir, "add", ".")
+			gitForScan(t, dir, "commit", "-m", "ignored bindings")
+			directory, err := Directory(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			revision, err := Revision(context.Background(), dir, "HEAD")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, s := range []model.Snapshot{directory, revision} {
+				if len(s.Functions) != 1 || len(s.Warnings) != 0 {
+					t.Fatalf("snapshot=%#v", s)
+				}
+				if _, err := diff.Build(s, s, []string{"lib.rs"}); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
 	}
 }

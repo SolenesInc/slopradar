@@ -128,10 +128,12 @@ func blobsWithConfig(rev string, blobs []gitread.Blob, config model.Config, skip
 	}
 	functions := map[model.Bucket][]model.Function{model.Source: {}, model.Tests: {}}
 	cloneFiles := []clones.File{}
+	ignored := map[string]bool{}
 	var files []analyzedFile
 	for _, blob := range blobs {
 		classification := model.Classify(blob.Path, blob.Content, config)
 		if classification.Excluded || classification.Generated {
+			ignored[blob.Path] = true
 			continue
 		}
 		if blob.Size > model.MaxFileBytes {
@@ -154,7 +156,7 @@ func blobsWithConfig(rev string, blobs []gitread.Blob, config model.Config, skip
 		}
 		files = append(files, analyzedFile{blob: blob, analysis: analyze, result: result, bucket: classification.Bucket})
 	}
-	snapshot.Warnings = append(snapshot.Warnings, classifyRustModules(files)...)
+	snapshot.Warnings = append(snapshot.Warnings, classifyRustModules(files, ignored, config)...)
 	for _, file := range files {
 		blob, analyze, result, bucket := file.blob, file.analysis, file.result, file.bucket
 		gitLineCoordinates := analyze.language != "typescript" || lang.CountLineTerminators(blob.Content, false) == lang.CountLineTerminators(blob.Content, true)

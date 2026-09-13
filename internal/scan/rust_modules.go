@@ -21,10 +21,12 @@ type moduleResolver struct {
 	edges    map[int][]moduleEdge
 	incoming map[int]bool
 	warnings []string
+	ignored  map[string]bool
+	config   model.Config
 }
 
-func classifyRustModules(files []analyzedFile) []string {
-	r := moduleResolver{files: files, index: map[string]int{}, edges: map[int][]moduleEdge{}, incoming: map[int]bool{}}
+func classifyRustModules(files []analyzedFile, ignored map[string]bool, config model.Config) []string {
+	r := moduleResolver{files: files, ignored: ignored, config: config, index: map[string]int{}, edges: map[int][]moduleEdge{}, incoming: map[int]bool{}}
 	for i, file := range files {
 		if file.analysis.language == "rust" {
 			r.index[file.blob.Path] = i
@@ -136,7 +138,7 @@ func (r *moduleResolver) resolve(from int, modules []lang.Module, moduleDir, att
 				targets = append(targets, target)
 			}
 		}
-		if len(targets) == 0 {
+		if len(targets) == 0 && !r.intentionallyOmitted(paths) {
 			r.warnings = append(r.warnings, fmt.Sprintf("Rust module %s in %s: no analyzed target among %q", module.Name, r.files[from].blob.Path, paths))
 		}
 		if len(targets) > 1 && !unknown {
@@ -172,4 +174,13 @@ func rustCrateRoot(file string) bool {
 	default:
 		return false
 	}
+}
+
+func (r *moduleResolver) intentionallyOmitted(paths []string) bool {
+	for _, file := range paths {
+		if r.ignored[file] || model.Classify(file, nil, r.config).Excluded {
+			return true
+		}
+	}
+	return false
 }
