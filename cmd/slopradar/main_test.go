@@ -209,8 +209,9 @@ func TestCloneMappingPathsSelectsCompatibleCloneFilesInBothSnapshots(t *testing.
 			{A: model.Range{File: "added.go"}, B: model.Range{File: "b.go"}},
 		},
 	}
-	want := []string{"a.go", "b.go"}
-	if got := cloneMappingPaths(base, head); !reflect.DeepEqual(got, want) {
+	want := []string{"a.go"}
+	touched := []string{"unrelated.go", "removed.go", "added.go", "ambiguous.js", "a.go"}
+	if got := cloneMappingPaths(base, head, touched); !reflect.DeepEqual(got, want) {
 		t.Fatalf("clone mapping paths = %#v, want %#v", got, want)
 	}
 }
@@ -235,7 +236,11 @@ func BenchmarkCloneLineChanges(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	paths := cloneMappingPaths(baseSnapshot, headSnapshot)
+	touched, err := repository.ChangedFiles(ctx, base, head)
+	if err != nil {
+		b.Fatal(err)
+	}
+	paths := cloneMappingPaths(baseSnapshot, headSnapshot, touched)
 	b.ResetTimer()
 	for range b.N {
 		changes, err := repository.LineChanges(ctx, base, head, paths)

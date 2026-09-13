@@ -61,7 +61,7 @@ func runDiff(ctx context.Context, args []string, output io.Writer) error {
 	if err := model.ValidateComplete(headSnapshot); err != nil {
 		return fmt.Errorf("head snapshot: %w", err)
 	}
-	lineChanges, err := repository.LineChanges(ctx, base, head, cloneMappingPaths(baseSnapshot, headSnapshot))
+	lineChanges, err := repository.LineChanges(ctx, base, head, cloneMappingPaths(baseSnapshot, headSnapshot, touched))
 	if err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func runDiff(ctx context.Context, args []string, output io.Writer) error {
 	return report.WriteDiff(output, options.format, result, report.ColorEnabled(output))
 }
 
-func cloneMappingPaths(base, head model.Snapshot) []string {
+func cloneMappingPaths(base, head model.Snapshot, touched []string) []string {
 	before := make(map[string]bool, len(base.AnalysisPaths))
 	for _, path := range base.AnalysisPaths {
 		before[path.File] = path.GitLineCoordinates
@@ -100,9 +100,14 @@ func cloneMappingPaths(base, head model.Snapshot) []string {
 			cloneFiles[pair.B.File] = struct{}{}
 		}
 	}
+	touchedFiles := make(map[string]struct{}, len(touched))
+	for _, file := range touched {
+		touchedFiles[file] = struct{}{}
+	}
 	paths := make([]string, 0, len(cloneFiles))
 	for file := range cloneFiles {
-		if compatible[file] {
+		_, isTouched := touchedFiles[file]
+		if compatible[file] && isTouched {
 			paths = append(paths, file)
 		}
 	}
