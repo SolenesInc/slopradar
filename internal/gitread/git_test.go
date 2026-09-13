@@ -255,6 +255,7 @@ func TestLineChangesReadsGitHunks(t *testing.T) {
 	git(t, dir, "config", "user.email", "test@slopradar.invalid")
 	git(t, dir, "config", "diff.algorithm", "patience")
 	git(t, dir, "config", "diff.indentHeuristic", "true")
+	git(t, dir, "config", "diff.interHunkContext", "1")
 	write(t, dir, "lines.go", "first\nremoved one\nremoved two\nstable\n")
 	git(t, dir, "add", ".")
 	git(t, dir, "commit", "-m", "base")

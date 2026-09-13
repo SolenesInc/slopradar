@@ -240,7 +240,7 @@ func (r *Repository) LineChanges(ctx context.Context, base, head string, paths [
 	if len(paths) == 0 {
 		return []LineChange{}, nil
 	}
-	args := []string{"--literal-pathspecs", "diff", "--no-renames", "--diff-algorithm=myers", "--no-indent-heuristic", "--unified=0", "--no-color", "--no-ext-diff", "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/", base, head, "--"}
+	args := []string{"--literal-pathspecs", "diff", "--no-renames", "--diff-algorithm=myers", "--no-indent-heuristic", "--unified=0", "--inter-hunk-context=0", "--no-color", "--no-ext-diff", "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/", base, head, "--"}
 	args = append(args, paths...)
 	out, err := gitOutput(ctx, r.dir, args...)
 	if err != nil {
