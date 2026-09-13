@@ -133,11 +133,14 @@ func TestSafeTextPathEncodingIsReversible(t *testing.T) {
 func TestDiffJSONSerializesEveryPathField(t *testing.T) {
 	invalid := string([]byte{'b', 'a', 'd', 0xfe, '.', 'g', 'o'})
 	literalEscape := `bad\xFE.go`
-	function := model.NewFunction(invalid, "run", 1, 1, 1, nil)
+	function := model.NewFunction(invalid, "run", 1, 1, 1, []model.Function{model.NewFunction(literalEscape, "inside", 2, 1, 1, nil)})
 	result := model.Diff{
-		Touched:       []string{invalid, literalEscape},
-		Buckets:       map[model.Bucket]model.BucketDelta{model.Source: {}, model.Tests: {}},
-		Functions:     []model.FunctionDelta{{File: invalid, Before: &function, After: &function}},
+		Touched: []string{invalid, literalEscape},
+		Buckets: map[model.Bucket]model.BucketDelta{model.Source: {}, model.Tests: {}},
+		Functions: []model.FunctionDelta{{
+			File: invalid, Before: &function, After: &function,
+			Nested: []model.FunctionDelta{{File: literalEscape, Before: &function, After: &function, Nested: []model.FunctionDelta{}}},
+		}},
 		ClonesAdded:   []model.ClonePair{{A: model.Range{File: invalid}, B: model.Range{File: literalEscape}}},
 		ClonesRemoved: []model.ClonePair{{A: model.Range{File: literalEscape}, B: model.Range{File: invalid}}},
 	}
@@ -151,8 +154,12 @@ func TestDiffJSONSerializesEveryPathField(t *testing.T) {
 	}
 	wantInvalid := `bad\xFE.go`
 	wantLiteral := `bad\\xFE.go`
-	if !reflect.DeepEqual(decoded.Touched, []string{wantInvalid, wantLiteral}) || decoded.Functions[0].File != wantInvalid || decoded.Functions[0].Before.File != wantInvalid || decoded.Functions[0].After.File != wantInvalid || decoded.ClonesAdded[0].A.File != wantInvalid || decoded.ClonesAdded[0].B.File != wantLiteral || decoded.ClonesRemoved[0].A.File != wantLiteral || decoded.ClonesRemoved[0].B.File != wantInvalid {
+	if !reflect.DeepEqual(decoded.Touched, []string{wantInvalid, wantLiteral}) || decoded.Functions[0].File != wantInvalid || decoded.Functions[0].Before.File != wantInvalid || decoded.Functions[0].Before.Nested[0].File != wantLiteral || decoded.Functions[0].After.File != wantInvalid || decoded.Functions[0].Nested[0].File != wantLiteral || decoded.Functions[0].Nested[0].Before.Nested[0].File != wantLiteral || decoded.ClonesAdded[0].A.File != wantInvalid || decoded.ClonesAdded[0].B.File != wantLiteral || decoded.ClonesRemoved[0].A.File != wantLiteral || decoded.ClonesRemoved[0].B.File != wantInvalid {
 		t.Fatalf("decoded diff = %#v", decoded)
+	}
+	serialized := serializedDiff(result)
+	if serialized.Functions[0].Nested[0].Nested == nil || result.Functions[0].Nested[0].Nested == nil || result.Functions[0].Nested[0].File != literalEscape {
+		t.Fatalf("nested delta shape or source identity changed: serialized=%#v source=%#v", serialized.Functions, result.Functions)
 	}
 }
 

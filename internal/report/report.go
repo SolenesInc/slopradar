@@ -106,18 +106,24 @@ func serializedSnapshot(snapshot model.Snapshot) model.Snapshot {
 
 func serializedDiff(result model.Diff) model.Diff {
 	result.Touched = serializedStrings(result.Touched)
-	if result.Functions != nil {
-		functions := make([]model.FunctionDelta, len(result.Functions))
-		copy(functions, result.Functions)
-		result.Functions = functions
-	}
-	for index := range result.Functions {
-		result.Functions[index].File = safeText(result.Functions[index].File)
-		result.Functions[index].Before = serializedFunctionPointer(result.Functions[index].Before)
-		result.Functions[index].After = serializedFunctionPointer(result.Functions[index].After)
-	}
+	result.Functions = serializedFunctionDeltas(result.Functions)
 	result.ClonesAdded = serializedClones(result.ClonesAdded)
 	result.ClonesRemoved = serializedClones(result.ClonesRemoved)
+	return result
+}
+
+func serializedFunctionDeltas(deltas []model.FunctionDelta) []model.FunctionDelta {
+	if deltas == nil {
+		return nil
+	}
+	result := make([]model.FunctionDelta, len(deltas))
+	copy(result, deltas)
+	for index := range result {
+		result[index].File = safeText(result[index].File)
+		result[index].Before = serializedFunctionPointer(result[index].Before)
+		result[index].After = serializedFunctionPointer(result[index].After)
+		result[index].Nested = serializedFunctionDeltas(result[index].Nested)
+	}
 	return result
 }
 
