@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/SolenesInc/slopradar/internal/model"
@@ -119,8 +120,8 @@ func outer() {
     register((((((func() {}))))))
     immediate := (func() {})()
     _ = immediate
-    nested := func() func() { return func() {} }
-    _ = nested
+	nested := func() func() { return func() {} }
+	_ = nested
 }
 `)
 	result, err := Analyze("fixture.go", source)
@@ -146,4 +147,92 @@ func outer() {
 	if !reflect.DeepEqual(names, want) {
 		t.Fatalf("names = %#v, want %#v", names, want)
 	}
+}
+
+func TestGo127GeneralizedNewAndGenericMethods(t *testing.T) {
+	source := []byte(`package fixture
+type Pair[A, B any] struct{}
+var answer = new(42)
+
+func (*Pair[A, B]) Map[C any](value C) C {
+    nested := func(flag bool) C {
+        if flag && true {
+            return value
+        }
+        return value
+    }
+    return nested(new(true) != nil)
+}
+`)
+	result, err := Analyze("fixture.go", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v", result.Warnings)
+	}
+	if len(result.Functions) != 1 || result.Functions[0].Name != "Pair.Map" || result.Functions[0].CC != 3 {
+		t.Fatalf("generic method = %#v", result.Functions)
+	}
+	nested := result.Functions[0].Nested
+	if len(nested) != 1 || nested[0].Name != "nested" || nested[0].CC != 3 {
+		t.Fatalf("nested function = %#v", nested)
+	}
+}
+
+func TestPhysicalCoordinatesAndExactLexicalTokens(t *testing.T) {
+	source := []byte("package fixture\r\n//line generated.go:700\r\nfunc physical() {\r\nraw := `a\r\nb`\r\nmessage := \"left\\nright\"\r\n_ = raw; // trailing\r\n_ = message\r\n}\r\n")
+	result, err := Analyze("physical.go", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Functions) != 1 || result.Functions[0].Line != 3 {
+		t.Fatalf("function coordinates = %#v", result.Functions)
+	}
+	if len(result.Comments) != 2 || result.Comments[0].StartLine != 2 || result.Comments[1].StartLine != 7 {
+		t.Fatalf("comment coordinates = %#v", result.Comments)
+	}
+	texts := []string{}
+	lines := map[string]int{}
+	for _, item := range result.Tokens {
+		texts = append(texts, item.Text)
+		lines[item.Text] = item.Line
+	}
+	if lines["func"] != 3 || lines["a\r\nb"] != 4 {
+		t.Fatalf("token coordinates = %#v", result.Tokens)
+	}
+	if strings.Count(strings.Join(texts, "\x00"), ";") != 1 {
+		t.Fatalf("implicit semicolons leaked or explicit semicolon disappeared: %#v", texts)
+	}
+	if !reflect.DeepEqual(stringTokens(texts), []string{"`", "a\r\nb", "`", "\"", "left", "\\n", "right", "\""}) {
+		t.Fatalf("string tokens changed source bytes: %#v", stringTokens(texts))
+	}
+}
+
+func TestAnalyzeRejectsRecoveredSyntax(t *testing.T) {
+	result, err := Analyze("broken.go", []byte("package fixture\nfunc broken("))
+	if err == nil || !strings.Contains(err.Error(), "parse broken.go: invalid Go syntax") {
+		t.Fatalf("result = %#v, error = %v", result, err)
+	}
+}
+
+func TestAnalyzePreservesArbitraryFilenameBytes(t *testing.T) {
+	file := string([]byte{'f', 'i', 'x', 't', 'u', 'r', 'e', 0xff, '.', 'g', 'o'})
+	result, err := Analyze(file, []byte("package fixture\nfunc kept() {}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Functions) != 1 || result.Functions[0].File != file {
+		t.Fatalf("functions = %#v", result.Functions)
+	}
+}
+
+func stringTokens(values []string) []string {
+	result := []string{}
+	for _, value := range values {
+		if value == "`" || value == "a\r\nb" || value == "\"" || value == "left" || value == "\\n" || value == "right" {
+			result = append(result, value)
+		}
+	}
+	return result
 }

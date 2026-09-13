@@ -158,6 +158,10 @@ func countSLOC(source []byte, start, end int, comments []Span) int {
 	return count
 }
 
+func CountSLOC(source []byte, start, end int, comments []Span) int {
+	return countSLOC(source, start, end, comments)
+}
+
 func CountLines(source []byte, comments, testSpans []Span) map[model.Bucket]int {
 	lines := SourceLines(source, comments, testSpans)
 	return map[model.Bucket]int{model.Source: len(lines[model.Source]), model.Tests: len(lines[model.Tests])}

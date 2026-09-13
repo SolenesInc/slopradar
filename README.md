@@ -18,7 +18,7 @@ receipts.
 ## Install
 
 slopradar supports Linux and macOS on arm64 and amd64. Installation needs Go
-1.24 or newer, cgo, and a C compiler:
+1.27 or newer, cgo, and a C compiler:
 
 ```sh
 go install github.com/SolenesInc/slopradar/cmd/slopradar@v0.1.0
