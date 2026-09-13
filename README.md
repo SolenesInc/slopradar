@@ -162,6 +162,11 @@ Generator output without a marker must be listed in `excludes`.
 
 Every function starts at CC 1. The following syntax adds one decision point.
 
+Go declarations without bodies contribute no function mass: their implementations
+are outside the analyzed Go source. Empty implemented functions and function
+literals still count. This follows the project's Go baseline prototype;
+gocyclo's inclusion of bodyless declarations is deliberately different.
+
 | Language | Decision points |
 | --- | --- |
 | Go | `if`; `for` and `range`; each non-default expression-case, type-case, and communication-case clause; each `&&` and `\|\|` |

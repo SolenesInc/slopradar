@@ -201,6 +201,31 @@ func TestDiffResolvesBaseToMergeBase(t *testing.T) {
 	}
 }
 
+func TestDiffBodylessGoDeclarationDoesNotAddFunctionMass(t *testing.T) {
+	dir := t.TempDir()
+	gitCommand(t, dir, "init", "-b", "main")
+	gitCommand(t, dir, "config", "user.name", "Slopradar Test")
+	gitCommand(t, dir, "config", "user.email", "test@slopradar.invalid")
+	writeFile(t, dir, "source.go", "package fixture\nfunc implemented() {}\n")
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "implementation")
+	writeFile(t, dir, "source.go", "package fixture\nfunc implemented() {}\nfunc external()\n")
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "external declaration")
+	t.Chdir(dir)
+	var output bytes.Buffer
+	if err := run(context.Background(), []string{"diff", "--base", "HEAD^", "--head", "HEAD", "--format=json", "--no-cache"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	var got model.Diff
+	if err := json.Unmarshal(output.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Functions) != 0 || !reflect.DeepEqual(got.Touched, []string{"source.go"}) {
+		t.Fatalf("diff = %#v", got)
+	}
+}
+
 func TestDiffRejectsHeadThatCrossesFileSizeTripwire(t *testing.T) {
 	dir := t.TempDir()
 	gitCommand(t, dir, "init", "-b", "main")

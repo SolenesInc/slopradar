@@ -193,8 +193,10 @@ func functionCandidates(root ast.Node, parents map[ast.Node]ast.Node, source []b
 }
 
 func isFunction(node ast.Node) bool {
-	switch node.(type) {
-	case *ast.FuncDecl, *ast.FuncLit:
+	switch node := node.(type) {
+	case *ast.FuncDecl:
+		return node.Body != nil
+	case *ast.FuncLit:
 		return true
 	default:
 		return false

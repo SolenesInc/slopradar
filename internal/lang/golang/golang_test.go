@@ -47,6 +47,31 @@ func TestAnalyzeGolden(t *testing.T) {
 	}
 }
 
+func TestBodylessDeclarationsDoNotContributeFunctionMass(t *testing.T) {
+	source := []byte("package fixture\nfunc external()\nfunc implemented() {}\nvar literal = func() { if ready() {} }\n")
+	result, err := Analyze("fixture.go", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, function := range result.Functions {
+		names = append(names, function.Name)
+	}
+	if !reflect.DeepEqual(names, []string{"implemented", "literal"}) {
+		t.Fatalf("functions = %#v", result.Functions)
+	}
+	if result.Functions[0].CC != 1 || result.Functions[1].CC != 2 {
+		t.Fatalf("implemented metrics = %#v", result.Functions)
+	}
+	foundDeclarationToken := false
+	for _, token := range result.Tokens {
+		foundDeclarationToken = foundDeclarationToken || token.Text == "external"
+	}
+	if !foundDeclarationToken {
+		t.Fatal("bodyless declaration disappeared from lexical clone input")
+	}
+}
+
 func TestClassificationCoversGoDefaultsAndConfiguration(t *testing.T) {
 	generated, err := os.ReadFile(filepath.Join("..", "..", "..", "testdata", "go", "generated.go"))
 	if err != nil {
