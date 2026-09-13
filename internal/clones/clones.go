@@ -7,7 +7,6 @@ import (
 	"hash/fnv"
 	"math/bits"
 	"sort"
-	"strings"
 
 	"github.com/SolenesInc/slopradar/internal/lang"
 	"github.com/SolenesInc/slopradar/internal/model"
@@ -534,12 +533,13 @@ func sourceLineCount(file File, lines model.Range) int {
 
 func makeRange(files []File, segments []segment, item extent) model.Range {
 	tokens := segments[item.segment].tokens
+	file := files[segments[item.segment].file]
 	first := tokens[item.start]
 	last := tokens[item.end-1]
 	return model.Range{
-		File:  files[segments[item.segment].file].Path,
+		File:  file.Path,
 		Start: first.Line,
-		End:   last.Line + strings.Count(last.Text, "\n"),
+		End:   last.Line + lang.CountLineTerminators([]byte(last.Text), file.Language == "typescript" || file.Language == "javascript"),
 	}
 }
 

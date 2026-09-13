@@ -45,6 +45,10 @@ func runDiff(ctx context.Context, args []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
+	lineChanges, err := repository.LineChanges(ctx, base, head)
+	if err != nil {
+		return err
+	}
 	cache := cacheStore(options.useCache)
 	baseSnapshot, err := scan.RevisionWithCache(ctx, ".", base, cache)
 	if err != nil {
@@ -54,7 +58,7 @@ func runDiff(ctx context.Context, args []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	result, err := diffcalc.Build(baseSnapshot, headSnapshot, touched)
+	result, err := diffcalc.BuildWithLineChanges(baseSnapshot, headSnapshot, touched, lineChanges)
 	if err != nil {
 		return err
 	}

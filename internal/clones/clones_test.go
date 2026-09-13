@@ -3,6 +3,7 @@ package clones
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/SolenesInc/slopradar/internal/lang"
@@ -45,6 +46,33 @@ func TestDetectRequiresFiveLinesAndSameLanguage(t *testing.T) {
 	})
 	if len(result.Pairs) != 0 {
 		t.Fatalf("pairs = %#v", result.Pairs)
+	}
+}
+
+func TestDetectCountsJavaScriptTerminatorsInFinalToken(t *testing.T) {
+	terminators := []struct {
+		name string
+		text string
+	}{
+		{name: "lf", text: "\n"},
+		{name: "crlf", text: "\r\n"},
+		{name: "cr", text: "\r"},
+		{name: "line separator", text: "\u2028"},
+		{name: "paragraph separator", text: "\u2029"},
+	}
+	for _, terminator := range terminators {
+		t.Run(terminator.name, func(t *testing.T) {
+			tokens := numberedTokens("shared", 1, JscpdDefaultMinimumTokens)
+			tokens[len(tokens)-1].Line = 1
+			tokens[len(tokens)-1].Text = strings.Join([]string{"one", "two", "three", "four", "five"}, terminator.text)
+			result := Detect([]File{
+				{Path: "a.js", Language: "typescript", Tokens: tokens, SourceLines: lineRange(model.Source, 1, 5)},
+				{Path: "b.js", Language: "typescript", Tokens: tokens, SourceLines: lineRange(model.Source, 1, 5)},
+			})
+			if len(result.Pairs) != 1 || result.Pairs[0].A.End != 5 || result.Pairs[0].B.End != 5 || result.Pairs[0].Lines != 5 {
+				t.Fatalf("pairs = %#v", result.Pairs)
+			}
+		})
 	}
 }
 

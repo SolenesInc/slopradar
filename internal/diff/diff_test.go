@@ -1,10 +1,12 @@
 package diff
 
 import (
+	"fmt"
 	"math"
 	"reflect"
 	"testing"
 
+	"github.com/SolenesInc/slopradar/internal/gitread"
 	"github.com/SolenesInc/slopradar/internal/model"
 )
 
@@ -180,6 +182,68 @@ func TestBuildPreservesRepeatedCloneIdentityMultiplicity(t *testing.T) {
 	removed := build(t, head, base, []string{"source.go"})
 	if len(removed.ClonesRemoved) != 1 || removed.ClonesRemoved[0].A.Start != 40 || len(removed.ClonesAdded) != 0 {
 		t.Fatalf("removed repeated occurrence = %#v, added = %#v", removed.ClonesRemoved, removed.ClonesAdded)
+	}
+}
+
+func TestLineMappingsFollowUnchangedLinesAcrossHunks(t *testing.T) {
+	mappings := newLineMappings([]gitread.LineChange{
+		{File: "source.go", BeforeStart: 1, BeforeCount: 2, AfterStart: 0, AfterCount: 0},
+		{File: "source.go", BeforeStart: 4, BeforeCount: 0, AfterStart: 2, AfterCount: 2},
+	})
+	cases := []struct {
+		before int
+		after  int
+		mapped bool
+	}{
+		{before: 1},
+		{before: 2},
+		{before: 3, after: 1, mapped: true},
+		{before: 4, after: 2, mapped: true},
+		{before: 5, after: 5, mapped: true},
+	}
+	for _, test := range cases {
+		after, mapped := mappings.line("source.go", test.before)
+		if after != test.after || mapped != test.mapped {
+			t.Errorf("line %d = (%d, %t), want (%d, %t)", test.before, after, mapped, test.after, test.mapped)
+		}
+	}
+	if after, mapped := mappings.line("unchanged.go", 7); after != 7 || !mapped {
+		t.Fatalf("unchanged line = (%d, %t)", after, mapped)
+	}
+}
+
+func BenchmarkCloneChangesRepeatedIdentity(b *testing.B) {
+	const attnPinnedClonePairCount = 7448
+	for _, test := range []struct {
+		name   string
+		factor int
+	}{
+		{name: "pinned", factor: 1},
+		{name: "double", factor: 2},
+		{name: "quadruple", factor: 4},
+	} {
+		count := attnPinnedClonePairCount * test.factor
+		before := make([]model.ClonePair, count)
+		for i := range before {
+			start := 1 + i*10
+			before[i] = clone("repeated", "copies.go", start, start+4, "peer.go", 1, 5)
+		}
+		after := make([]model.ClonePair, count-1)
+		for i := range after {
+			start := before[i+1].A.Start - 5
+			after[i] = clone("repeated", "copies.go", start, start+4, "peer.go", 1, 5)
+		}
+		mappings := newLineMappings([]gitread.LineChange{{File: "copies.go", BeforeStart: 1, BeforeCount: 5, AfterStart: 0, AfterCount: 0}})
+		touched := map[string]struct{}{"copies.go": {}}
+		b.Run(fmt.Sprintf("%s-%d", test.name, count), func(b *testing.B) {
+			b.ReportMetric(float64(count), "pairs")
+			for range b.N {
+				added, removed := cloneChanges(before, after, touched, mappings)
+				if len(added) != 0 || len(removed) != 1 || removed[0] != before[0] {
+					b.Fatalf("changes = added %#v, removed %#v", added, removed)
+				}
+			}
+		})
 	}
 }
 

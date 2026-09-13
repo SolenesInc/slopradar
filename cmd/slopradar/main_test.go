@@ -14,6 +14,7 @@ import (
 
 	"github.com/SolenesInc/slopradar/internal/model"
 	"github.com/SolenesInc/slopradar/internal/report"
+	"github.com/SolenesInc/slopradar/internal/scan"
 )
 
 func TestScanDirectoryJSONIsDeterministic(t *testing.T) {
@@ -314,6 +315,106 @@ func TestDiffPreservesRepeatedFunctionsWhenOneIsInsertedAndRemoved(t *testing.T)
 	}
 }
 
+func TestDiffRemovesDeletedRepeatedCloneOccurrence(t *testing.T) {
+	dir := t.TempDir()
+	gitCommand(t, dir, "init", "-b", "main")
+	gitCommand(t, dir, "config", "user.name", "Slopradar Test")
+	gitCommand(t, dir, "config", "user.email", "test@slopradar.invalid")
+	writeFile(t, dir, "copies.go", repeatedCloneCopies(true))
+	writeFile(t, dir, "peer.go", repeatedClonePeer())
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "base")
+	base := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+
+	writeFile(t, dir, "copies.go", repeatedCloneCopies(false))
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "remove first copy")
+	head := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+
+	baseSnapshot, err := scan.Revision(context.Background(), dir, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	headSnapshot, err := scan.Revision(context.Background(), dir, head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var surviving model.ClonePair
+	for _, pair := range headSnapshot.Clones {
+		if pair.A.File == "copies.go" && pair.B.File == "peer.go" {
+			surviving = pair
+			break
+		}
+	}
+	if surviving.ID == "" {
+		t.Fatalf("head cross-file clones = %#v", headSnapshot.Clones)
+	}
+	before := []model.ClonePair{}
+	for _, pair := range baseSnapshot.Clones {
+		if pair.ID == surviving.ID {
+			before = append(before, pair)
+		}
+	}
+	if len(before) != 2 || before[0].A.Start >= before[1].A.Start || surviving.A.Start != before[0].A.Start {
+		t.Fatalf("fixture ranges: before = %#v, surviving = %#v", before, surviving)
+	}
+
+	t.Chdir(dir)
+	result := commandDiff(t, base, head)
+	removed := []model.ClonePair{}
+	for _, pair := range result.ClonesRemoved {
+		if pair.ID == surviving.ID {
+			removed = append(removed, pair)
+		}
+	}
+	if len(removed) != 1 || removed[0].A.Start != before[0].A.Start {
+		t.Fatalf("removed repeated occurrence = %#v, want deleted range %#v", removed, before[0])
+	}
+}
+
+func TestDiffAddsInsertedRepeatedCloneOccurrence(t *testing.T) {
+	dir := t.TempDir()
+	gitCommand(t, dir, "init", "-b", "main")
+	gitCommand(t, dir, "config", "user.name", "Slopradar Test")
+	gitCommand(t, dir, "config", "user.email", "test@slopradar.invalid")
+	writeFile(t, dir, "copies.go", repeatedCloneCopies(false))
+	writeFile(t, dir, "peer.go", repeatedClonePeer())
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "base")
+	base := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+
+	writeFile(t, dir, "copies.go", repeatedCloneCopies(true))
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "insert first copy")
+	head := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+
+	headSnapshot, err := scan.Revision(context.Background(), dir, head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	crossFile := []model.ClonePair{}
+	for _, pair := range headSnapshot.Clones {
+		if pair.A.File == "copies.go" && pair.B.File == "peer.go" {
+			crossFile = append(crossFile, pair)
+		}
+	}
+	if len(crossFile) != 2 || crossFile[0].ID != crossFile[1].ID || crossFile[0].A.Start >= crossFile[1].A.Start {
+		t.Fatalf("head cross-file clones = %#v", crossFile)
+	}
+
+	t.Chdir(dir)
+	result := commandDiff(t, base, head)
+	added := []model.ClonePair{}
+	for _, pair := range result.ClonesAdded {
+		if pair.ID == crossFile[0].ID {
+			added = append(added, pair)
+		}
+	}
+	if len(added) != 1 || added[0].A.Start != crossFile[0].A.Start {
+		t.Fatalf("added repeated occurrence = %#v, want inserted range %#v", added, crossFile[0])
+	}
+}
+
 func TestDiffReportsNestedFunctionChanges(t *testing.T) {
 	dir := t.TempDir()
 	gitCommand(t, dir, "init", "-b", "main")
@@ -505,7 +606,6 @@ func repeatedInitSource(inserted bool) string {
 	if second() {}
 	if third() {}
 }
-
 `
 	}
 	return `package fixture
@@ -515,7 +615,38 @@ func repeatedInitSource(inserted bool) string {
 func init() {
 	if existing() {}
 }
+
 `
+}
+
+func repeatedCloneCopies(includeFirst bool) string {
+	first := ""
+	if includeFirst {
+		first = repeatedCloneFunction("first")
+	}
+	return "package fixture\n\n" + first + repeatedCloneFunction("second")
+}
+
+func repeatedClonePeer() string {
+	return "package fixture\n\n" + repeatedCloneFunction("peer")
+}
+
+func repeatedCloneFunction(name string) string {
+	return fmt.Sprintf(`func %s(value int) int {
+	value = value + 1
+	value = value + 2
+	value = value + 3
+	value = value + 4
+	value = value + 5
+	value = value + 6
+	value = value + 7
+	value = value + 8
+	value = value + 9
+	value = value + 10
+	return value
+}
+
+`, name)
 }
 
 func nestedCallbackSource(complex bool) string {

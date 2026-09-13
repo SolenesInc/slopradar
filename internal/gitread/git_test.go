@@ -248,6 +248,48 @@ func TestChangedFilesTreatsRenameAsRemovedAndAdded(t *testing.T) {
 	}
 }
 
+func TestLineChangesReadsGitHunks(t *testing.T) {
+	dir := t.TempDir()
+	git(t, dir, "init", "-b", "main")
+	git(t, dir, "config", "user.name", "Slopradar Test")
+	git(t, dir, "config", "user.email", "test@slopradar.invalid")
+	write(t, dir, "lines.go", "first\nremoved one\nremoved two\nstable\n")
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-m", "base")
+	base := strings.TrimSpace(git(t, dir, "rev-parse", "HEAD"))
+	write(t, dir, "lines.go", "added\nfirst\nstable\n")
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-m", "head")
+	head := strings.TrimSpace(git(t, dir, "rev-parse", "HEAD"))
+	repository, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := repository.LineChanges(context.Background(), base, head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []LineChange{
+		{File: "lines.go", BeforeStart: 0, BeforeCount: 0, AfterStart: 1, AfterCount: 1},
+		{File: "lines.go", BeforeStart: 2, BeforeCount: 2, AfterStart: 2, AfterCount: 0},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("line changes = %#v, want %#v", got, want)
+	}
+}
+
+func TestParseLineChangesPreservesQuotedPathsAndIgnoresSourceMarkers(t *testing.T) {
+	patch := []byte("diff --git \"a/line\\nfile.go\" \"b/line\\nfile.go\"\n--- \"a/line\\nfile.go\"\n+++ \"b/line\\nfile.go\"\n@@ -3 +3,0 @@\n--- source text\n")
+	got, err := parseLineChanges(patch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []LineChange{{File: "line\nfile.go", BeforeStart: 3, BeforeCount: 1, AfterStart: 3, AfterCount: 0}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("line changes = %#v, want %#v", got, want)
+	}
+}
+
 func TestReadBlobsStopsMalformedStreamingProducer(t *testing.T) {
 	bin := t.TempDir()
 	fakeGit := filepath.Join(bin, "git")

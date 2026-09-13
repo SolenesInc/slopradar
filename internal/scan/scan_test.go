@@ -2,6 +2,7 @@ package scan
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -483,4 +484,45 @@ func TestJavaScriptLineTerminatorsPreserveCloneCoverage(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestJavaScriptFinalTemplateTokenKeepsExactlyFiveLineClone(t *testing.T) {
+	terminators := []struct {
+		name string
+		text string
+	}{
+		{name: "lf", text: "\n"},
+		{name: "crlf", text: "\r\n"},
+		{name: "cr", text: "\r"},
+		{name: "line separator", text: "\u2028"},
+		{name: "paragraph separator", text: "\u2029"},
+	}
+	for _, terminator := range terminators {
+		t.Run(terminator.name, func(t *testing.T) {
+			left := javascriptFinalTemplateClone(terminator.text, "+")
+			right := javascriptFinalTemplateClone(terminator.text, "-")
+			snapshot, err := Blobs("template-lines", []gitread.Blob{
+				{BlobInfo: gitread.BlobInfo{Path: "a.js", Size: int64(len(left))}, Content: left},
+				{BlobInfo: gitread.BlobInfo{Path: "b.js", Size: int64(len(right))}, Content: right},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(snapshot.Clones) != 1 || snapshot.Clones[0].A != (model.Range{File: "a.js", Start: 2, End: 6}) || snapshot.Clones[0].B != (model.Range{File: "b.js", Start: 2, End: 6}) || snapshot.Clones[0].Lines != 5 {
+				t.Fatalf("clones = %#v", snapshot.Clones)
+			}
+			if totals := snapshot.Buckets[model.Source]; totals.SourceLines != 10 || totals.CloneLines != 10 {
+				t.Fatalf("source totals = %#v", totals)
+			}
+		})
+	}
+}
+
+func javascriptFinalTemplateClone(terminator, operator string) []byte {
+	operands := make([]string, 30)
+	for i := range operands {
+		operands[i] = fmt.Sprintf("value%d", i)
+	}
+	template := "`" + strings.Join([]string{"one", "two", "three", "four", "five"}, terminator) + "`"
+	return []byte("// ignored" + terminator + "const result = " + strings.Join(operands, " + ") + " + " + template + " " + operator + " tail")
 }

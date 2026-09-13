@@ -193,6 +193,29 @@ extern "C" fn exported() {}
 	}
 }
 
+func TestBareCarriageReturnsRemainRustWhitespace(t *testing.T) {
+	source := []byte("fn value() {\r/* first\rsecond */\rlet result = 1;\rresult\r}")
+	result, err := Analyze("fixture.rs", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Functions) != 1 || result.Functions[0].Line != 1 || result.Functions[0].SLOC != 1 {
+		t.Fatalf("functions = %#v", result.Functions)
+	}
+	if len(result.Comments) != 1 || result.Comments[0].StartLine != 1 || result.Comments[0].EndLine != 1 {
+		t.Fatalf("comments = %#v", result.Comments)
+	}
+	for _, token := range result.Tokens {
+		if token.Line != 1 {
+			t.Fatalf("token = %#v, want line 1", token)
+		}
+	}
+	lines := lang.SourceLines(source, result.Comments, result.TestSpans)
+	if want := []int{1}; !reflect.DeepEqual(lines[model.Source], want) {
+		t.Fatalf("source lines = %#v, want %#v", lines[model.Source], want)
+	}
+}
+
 func collectNamedKinds(node *sitter.Node, kinds map[string]int) {
 	kinds[node.Kind()]++
 	for i := uint(0); i < node.NamedChildCount(); i++ {

@@ -291,6 +291,36 @@ func TestAnalyzeRejectsRecoveredSyntax(t *testing.T) {
 	}
 }
 
+func TestBareCarriageReturnsRemainGoWhitespace(t *testing.T) {
+	source := []byte("package fixture; func value() int {\r/* first\rsecond */\rtext := `one\rtwo`;\rreturn len(text);\r}")
+	result, err := Analyze("fixture.go", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Functions) != 1 || result.Functions[0].Line != 1 || result.Functions[0].SLOC != 1 {
+		t.Fatalf("functions = %#v", result.Functions)
+	}
+	if len(result.Comments) != 1 || result.Comments[0].StartLine != 1 || result.Comments[0].EndLine != 1 {
+		t.Fatalf("comments = %#v", result.Comments)
+	}
+	foundRawCarriageReturn := false
+	for _, token := range result.Tokens {
+		if token.Line != 1 {
+			t.Fatalf("token = %#v, want line 1", token)
+		}
+		if token.Text == "one\rtwo" {
+			foundRawCarriageReturn = true
+		}
+	}
+	if !foundRawCarriageReturn {
+		t.Fatalf("raw string bytes changed: %#v", result.Tokens)
+	}
+	lines := lang.SourceLines(source, result.Comments, result.TestSpans)
+	if want := []int{1}; !reflect.DeepEqual(lines[model.Source], want) {
+		t.Fatalf("source lines = %#v, want %#v", lines[model.Source], want)
+	}
+}
+
 func TestAnalyzePreservesArbitraryFilenameBytes(t *testing.T) {
 	file := string([]byte{'f', 'i', 'x', 't', 'u', 'r', 'e', 0xff, '.', 'g', 'o'})
 	result, err := Analyze(file, []byte("package fixture\nfunc kept() {}\n"))

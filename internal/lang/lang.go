@@ -233,11 +233,28 @@ func nextLineTerminator(content []byte, start int, javascript bool) (int, int) {
 	return len(content), 0
 }
 
+func CountLineTerminators(content []byte, javascript bool) int {
+	count := 0
+	for offset := 0; offset < len(content); {
+		width := lineTerminatorWidth(content, offset, javascript)
+		if width == 0 {
+			offset++
+			continue
+		}
+		count++
+		offset += width
+	}
+	return count
+}
+
 func lineTerminatorWidth(content []byte, offset int, javascript bool) int {
 	switch content[offset] {
 	case '\n':
 		return 1
 	case '\r':
+		if !javascript {
+			return 0
+		}
 		if offset+1 < len(content) && content[offset+1] == '\n' {
 			return 2
 		}

@@ -33,6 +33,14 @@ type Commit struct {
 
 type Merge = Commit
 
+type LineChange struct {
+	File        string
+	BeforeStart int
+	BeforeCount int
+	AfterStart  int
+	AfterCount  int
+}
+
 type Repository struct {
 	dir string
 }
@@ -226,6 +234,114 @@ func (r *Repository) ChangedFiles(ctx context.Context, base, head string) ([]str
 	}
 	sort.Strings(files)
 	return files, nil
+}
+
+func (r *Repository) LineChanges(ctx context.Context, base, head string) ([]LineChange, error) {
+	out, err := gitOutput(ctx, r.dir, "diff", "--no-renames", "--unified=0", "--no-color", "--no-ext-diff", "--no-textconv", base, head, "--")
+	if err != nil {
+		return nil, err
+	}
+	return parseLineChanges(out)
+}
+
+func parseLineChanges(patch []byte) ([]LineChange, error) {
+	changes := []LineChange{}
+	oldFile := ""
+	file := ""
+	header := false
+	for len(patch) != 0 {
+		line := patch
+		if end := bytes.IndexByte(patch, '\n'); end >= 0 {
+			line = patch[:end]
+			patch = patch[end+1:]
+		} else {
+			patch = nil
+		}
+		switch {
+		case bytes.HasPrefix(line, []byte("diff --git ")):
+			oldFile = ""
+			file = ""
+			header = true
+		case header && bytes.HasPrefix(line, []byte("--- ")):
+			parsed, parseErr := patchPath(string(line[len("--- "):]), "a/")
+			if parseErr != nil {
+				return nil, parseErr
+			}
+			oldFile = parsed
+		case header && bytes.HasPrefix(line, []byte("+++ ")):
+			parsed, parseErr := patchPath(string(line[len("+++ "):]), "b/")
+			if parseErr != nil {
+				return nil, parseErr
+			}
+			file = parsed
+			if file == "" {
+				file = oldFile
+			}
+		case bytes.HasPrefix(line, []byte("@@ -")):
+			header = false
+			beforeStart, beforeCount, afterStart, afterCount, parseErr := parseHunkHeader(string(line))
+			if parseErr != nil {
+				return nil, parseErr
+			}
+			if file == "" {
+				return nil, fmt.Errorf("parse git diff hunk without a file: %q", line)
+			}
+			changes = append(changes, LineChange{File: file, BeforeStart: beforeStart, BeforeCount: beforeCount, AfterStart: afterStart, AfterCount: afterCount})
+		}
+	}
+	return changes, nil
+}
+
+func patchPath(value, prefix string) (string, error) {
+	if value == "/dev/null" {
+		return "", nil
+	}
+	if strings.HasPrefix(value, "\"") {
+		decoded, err := strconv.Unquote(value)
+		if err != nil {
+			return "", fmt.Errorf("parse quoted git diff path %q: %w", value, err)
+		}
+		value = decoded
+	}
+	if !strings.HasPrefix(value, prefix) {
+		return "", fmt.Errorf("parse git diff path %q without prefix %q", value, prefix)
+	}
+	return strings.TrimPrefix(value, prefix), nil
+}
+
+func parseHunkHeader(header string) (int, int, int, int, error) {
+	fields := strings.Fields(header)
+	if len(fields) < 4 || fields[0] != "@@" || fields[3] != "@@" {
+		return 0, 0, 0, 0, fmt.Errorf("parse git diff hunk header %q", header)
+	}
+	beforeStart, beforeCount, err := parseHunkRange(fields[1], '-')
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("parse git diff hunk header %q: %w", header, err)
+	}
+	afterStart, afterCount, err := parseHunkRange(fields[2], '+')
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("parse git diff hunk header %q: %w", header, err)
+	}
+	return beforeStart, beforeCount, afterStart, afterCount, nil
+}
+
+func parseHunkRange(value string, prefix byte) (int, int, error) {
+	if len(value) < 2 || value[0] != prefix {
+		return 0, 0, fmt.Errorf("invalid range %q", value)
+	}
+	parts := strings.SplitN(value[1:], ",", 2)
+	start, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid range %q", value)
+	}
+	count := 1
+	if len(parts) == 2 {
+		count, err = strconv.Atoi(parts[1])
+		if err != nil {
+			return 0, 0, fmt.Errorf("invalid range %q", value)
+		}
+	}
+	return start, count, nil
 }
 
 func (r *Repository) FirstParentMerges(ctx context.Context, rev string, limit int) ([]Merge, error) {

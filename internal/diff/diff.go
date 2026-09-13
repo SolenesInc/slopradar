@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/SolenesInc/slopradar/internal/gitread"
 	"github.com/SolenesInc/slopradar/internal/model"
 )
 
@@ -16,6 +17,10 @@ type functionKey struct {
 }
 
 func Build(base, head model.Snapshot, touched []string) (model.Diff, error) {
+	return BuildWithLineChanges(base, head, touched, nil)
+}
+
+func BuildWithLineChanges(base, head model.Snapshot, touched []string, lineChanges []gitread.LineChange) (model.Diff, error) {
 	if err := model.ValidateComplete(base); err != nil {
 		return model.Diff{}, fmt.Errorf("base snapshot: %w", err)
 	}
@@ -53,7 +58,7 @@ func Build(base, head model.Snapshot, touched []string) (model.Diff, error) {
 	}
 	sortFunctionDeltas(result.Functions)
 
-	result.ClonesAdded, result.ClonesRemoved = cloneChanges(base.Clones, head.Clones, touchedSet)
+	result.ClonesAdded, result.ClonesRemoved = cloneChanges(base.Clones, head.Clones, touchedSet, newLineMappings(lineChanges))
 	baseCloneLines := touchedCloneLines(base.CloneCoverage, touchedSet)
 	headCloneLines := touchedCloneLines(head.CloneCoverage, touchedSet)
 	for _, bucket := range []model.Bucket{model.Source, model.Tests} {
@@ -359,7 +364,75 @@ func functionLine(delta model.FunctionDelta) int {
 	return delta.Before.Line
 }
 
-func cloneChanges(base, head []model.ClonePair, touched map[string]struct{}) ([]model.ClonePair, []model.ClonePair) {
+type mappedLineChange struct {
+	beforeStart int
+	beforeCount int
+	boundary    int
+	delta       int
+}
+
+type lineMappings map[string][]mappedLineChange
+
+type clonePosition struct {
+	aFile  string
+	aStart int
+	aEnd   int
+	bFile  string
+	bStart int
+	bEnd   int
+}
+
+func newLineMappings(changes []gitread.LineChange) lineMappings {
+	grouped := lineMappings{}
+	for _, change := range changes {
+		boundary := change.BeforeStart
+		if change.BeforeCount == 0 {
+			boundary++
+		}
+		grouped[change.File] = append(grouped[change.File], mappedLineChange{
+			beforeStart: change.BeforeStart,
+			beforeCount: change.BeforeCount,
+			boundary:    boundary,
+			delta:       change.AfterCount - change.BeforeCount,
+		})
+	}
+	for file := range grouped {
+		sort.Slice(grouped[file], func(i, j int) bool { return grouped[file][i].boundary < grouped[file][j].boundary })
+		delta := 0
+		for i := range grouped[file] {
+			delta += grouped[file][i].delta
+			grouped[file][i].delta = delta
+		}
+	}
+	return grouped
+}
+
+func (mappings lineMappings) line(file string, before int) (int, bool) {
+	changes := mappings[file]
+	index := sort.Search(len(changes), func(i int) bool { return changes[i].boundary > before }) - 1
+	if index < 0 {
+		return before, true
+	}
+	change := changes[index]
+	if change.beforeCount != 0 && before >= change.beforeStart && before < change.beforeStart+change.beforeCount {
+		return 0, false
+	}
+	return before + change.delta, true
+}
+
+func (mappings lineMappings) clone(pair model.ClonePair) (clonePosition, bool) {
+	aStart, aStartMapped := mappings.line(pair.A.File, pair.A.Start)
+	aEnd, aEndMapped := mappings.line(pair.A.File, pair.A.End)
+	bStart, bStartMapped := mappings.line(pair.B.File, pair.B.Start)
+	bEnd, bEndMapped := mappings.line(pair.B.File, pair.B.End)
+	return clonePosition{aFile: pair.A.File, aStart: aStart, aEnd: aEnd, bFile: pair.B.File, bStart: bStart, bEnd: bEnd}, aStartMapped && aEndMapped && bStartMapped && bEndMapped
+}
+
+func positionOf(pair model.ClonePair) clonePosition {
+	return clonePosition{aFile: pair.A.File, aStart: pair.A.Start, aEnd: pair.A.End, bFile: pair.B.File, bStart: pair.B.Start, bEnd: pair.B.End}
+}
+
+func cloneChanges(base, head []model.ClonePair, touched map[string]struct{}, mappings lineMappings) ([]model.ClonePair, []model.ClonePair) {
 	baseGroups := groupClones(base)
 	headGroups := groupClones(head)
 	ids := make([]string, 0, len(baseGroups)+len(headGroups))
@@ -379,13 +452,36 @@ func cloneChanges(base, head []model.ClonePair, touched map[string]struct{}) ([]
 	for _, id := range ids {
 		before := baseGroups[id]
 		after := headGroups[id]
-		shared := min(len(before), len(after))
-		for _, pair := range after[shared:] {
+		afterByPosition := map[clonePosition][]int{}
+		for index, pair := range after {
+			position := positionOf(pair)
+			afterByPosition[position] = append(afterByPosition[position], index)
+		}
+		matchedAfter := make([]bool, len(after))
+		unmatchedBefore := make([]model.ClonePair, 0, len(before))
+		for _, pair := range before {
+			position, mapped := mappings.clone(pair)
+			candidates := afterByPosition[position]
+			if !mapped || len(candidates) == 0 {
+				unmatchedBefore = append(unmatchedBefore, pair)
+				continue
+			}
+			matchedAfter[candidates[0]] = true
+			afterByPosition[position] = candidates[1:]
+		}
+		unmatchedAfter := make([]model.ClonePair, 0, len(after))
+		for index, pair := range after {
+			if !matchedAfter[index] {
+				unmatchedAfter = append(unmatchedAfter, pair)
+			}
+		}
+		shared := min(len(unmatchedBefore), len(unmatchedAfter))
+		for _, pair := range unmatchedAfter[shared:] {
 			if cloneTouches(pair, touched) {
 				added = append(added, pair)
 			}
 		}
-		for _, pair := range before[shared:] {
+		for _, pair := range unmatchedBefore[shared:] {
 			if cloneTouches(pair, touched) {
 				removed = append(removed, pair)
 			}
