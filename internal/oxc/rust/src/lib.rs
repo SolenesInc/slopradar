@@ -431,7 +431,7 @@ impl<'s> MetricVisitor<'s> {
     fn lexical_owner(&self) -> Option<&str> {
         self.hints
             .last()
-            .filter(|hint| hint.as_str() != "(anonymous)" && !hint.starts_with("cb:"))
+            .filter(|hint| hint.as_str() != "(anonymous)")
             .map(String::as_str)
     }
 
@@ -477,7 +477,7 @@ impl<'s> MetricVisitor<'s> {
             PropertyKind::Set => format!("set {name}"),
         };
         match self.hints.last() {
-            Some(owner) if owner != "(anonymous)" && !owner.starts_with("cb:") => {
+            Some(owner) if owner != "(anonymous)" => {
                 format!("{owner}.{member}")
             }
             _ => member,
@@ -726,6 +726,34 @@ mod tests {
     }
 
     #[test]
+    fn direct_callback_values_keep_the_call_owner() {
+        let analysis = analyze_source(
+            "arguments.ts",
+            "register({ run() {} }); install({ run() {} }); register(class Shared { run() {} }); install(class Shared { run() {} }); register(function shared() {}); install(function shared() {}); register({ nested: { run() {} } }); register({ run() { const local = () => {}; } });",
+        );
+        assert_eq!(analysis.status, Status::Ok);
+        let names = analysis
+            .functions
+            .iter()
+            .map(|f| f.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                "cb:register.run",
+                "cb:install.run",
+                "cb:register.Shared.run",
+                "cb:install.Shared.run",
+                "cb:register.shared",
+                "cb:install.shared",
+                "cb:register.nested.run",
+                "cb:register.run"
+            ]
+        );
+        assert_eq!(analysis.functions[7].nested[0].name, "local");
+    }
+
+    #[test]
     fn ecmascript_whitespace_does_not_add_function_lines() {
         for whitespace in [
             '\u{a0}', '\u{1680}', '\u{2000}', '\u{202f}', '\u{205f}', '\u{3000}', '\u{feff}',
@@ -867,7 +895,7 @@ mod tests {
                 "A.static boot",
                 "Assigned.run",
                 "Alias.Internal.run",
-                "(anonymous class).run",
+                "cb:factory.run",
                 "Outer.method",
             ]
         );
@@ -899,8 +927,8 @@ mod tests {
                 "owned.explicit.retained",
                 "assigned.target.run",
                 "assigned.target.nested.arrow",
-                "run",
-                "arrow",
+                "cb:factory.run",
+                "cb:factory.arrow",
                 "outer",
             ]
         );

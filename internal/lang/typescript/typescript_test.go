@@ -204,7 +204,7 @@ class Outer {
 		"Declared.static boot",
 		"Assigned.run",
 		"Alias.Internal.run",
-		"(anonymous class).run",
+		"cb:factory.run",
 		"Outer.method",
 	}
 	got := make([]string, len(result.Functions))
@@ -250,8 +250,8 @@ function outer() { return { run() {} } }
 		"owned.explicit.retained",
 		"assigned.target.run",
 		"assigned.target.nested.arrow",
-		"run",
-		"arrow",
+		"cb:factory.run",
+		"cb:factory.arrow",
 		"outer",
 	}
 	got := make([]string, len(result.Functions))
