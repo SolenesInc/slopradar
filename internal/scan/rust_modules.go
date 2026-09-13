@@ -165,12 +165,25 @@ func (r *moduleResolver) invalidPath(from int, module, name string) {
 }
 
 func rustCrateRoot(file string) bool {
-	if path.Base(file) == "lib.rs" || path.Base(file) == "main.rs" {
+	base, dir := path.Base(file), path.Dir(file)
+	if rustTargetDirectory(dir) {
 		return true
 	}
-	switch path.Base(path.Dir(file)) {
-	case "tests", "examples", "benches", "bin":
+	if base != "main.rs" && base != "lib.rs" {
+		return false
+	}
+	if dir == "." || path.Base(dir) == "src" {
 		return true
+	}
+	return base == "main.rs" && rustTargetDirectory(path.Dir(dir))
+}
+
+func rustTargetDirectory(dir string) bool {
+	switch path.Base(dir) {
+	case "tests", "examples", "benches":
+		return true
+	case "bin":
+		return path.Base(path.Dir(dir)) == "src"
 	default:
 		return false
 	}

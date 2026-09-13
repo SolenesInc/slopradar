@@ -366,3 +366,38 @@ func stringTokens(values []string) []string {
 	}
 	return result
 }
+
+func TestCompositeLiteralFunctionOwners(t *testing.T) {
+	source := []byte(`package fixture
+var a = Hooks{Run: func() {}}
+var b = Hooks{Run: func() {}}
+var c = Hooks{Inner: Hooks{Run: func() {}}}
+var d, e = Hooks{Run: func() {}}, Hooks{Run: func() {}}
+var list = []Hooks{{Run: func() {}}, {Run: func() {}}}
+var positional = Pair{func() {}, func() {}}
+var keyed = map[string]Hooks{"one": {Run: func() {}}, "two": {Run: func() {}}}
+func outer() {
+ local := Hooks{Run: func() { inner := Hooks{Run: func() {}}; _ = inner }}
+ assigned.Field = Hooks{Run: func() {}}
+ register(Hooks{Run: func() {}})
+ _ = local
+}
+`)
+	result, err := Analyze("owners.go", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	var collect func([]model.Function)
+	collect = func(functions []model.Function) {
+		for _, f := range functions {
+			names = append(names, f.Name)
+			collect(f.Nested)
+		}
+	}
+	collect(result.Functions)
+	want := []string{"a.Run", "b.Run", "c.Inner.Run", "d.Run", "e.Run", "list[0].Run", "list[1].Run", "positional[0]", "positional[1]", "keyed.one.Run", "keyed.two.Run", "outer", "local.Run", "inner.Run", "assigned.Field.Run", "cb:register.Run"}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("names = %q, want %q", names, want)
+	}
+}

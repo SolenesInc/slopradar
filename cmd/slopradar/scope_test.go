@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -138,5 +140,88 @@ func TestScanExcludesHashbangFromLineTotals(t *testing.T) {
 		if got.Buckets[model.Source].SourceLines != 1 || len(got.Functions) != 1 || got.Functions[0].Line != 2 {
 			t.Fatalf("scan %s = %#v", target, got)
 		}
+	}
+}
+
+func TestDiffReportsSwappedGoCompositeMetrics(t *testing.T) {
+	dir := t.TempDir()
+	gitCommand(t, dir, "init", "-b", "main")
+	gitCommand(t, dir, "config", "user.name", "Slopradar Test")
+	gitCommand(t, dir, "config", "user.email", "test@slopradar.invalid")
+	writeFile(t, dir, "owners.go", "package fixture; var a = Hooks{Run: func(x bool) { if x {} }}\nvar b = Hooks{Run: func(x bool) {}}\n")
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "before")
+	writeFile(t, dir, "owners.go", "package fixture; var a = Hooks{Run: func(x bool) {}}\nvar b = Hooks{Run: func(x bool) { if x {} }}\n")
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "after")
+	t.Chdir(dir)
+	var output bytes.Buffer
+	if err := run(context.Background(), []string{"diff", "--base", "HEAD^", "--head", "HEAD", "--format=json", "--no-cache"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	var got model.Diff
+	if err := json.Unmarshal(output.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Functions) != 2 {
+		t.Fatalf("deltas = %#v", got.Functions)
+	}
+	for i, f := range got.Functions {
+		name, before, after := "a.Run", 2, 1
+		if i == 1 {
+			name, before, after = "b.Run", 1, 2
+		}
+		if f.Name != name || f.Before == nil || f.After == nil || f.Before.CC != before || f.After.CC != after || f.Before.Line != i+1 || f.After.Line != i+1 {
+			t.Fatalf("delta = %#v", f)
+		}
+	}
+}
+
+func TestNestedRustEntrypointNamesAllowReports(t *testing.T) {
+	for _, name := range []string{"main", "lib"} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			gitCommand(t, dir, "init", "-b", "main")
+			gitCommand(t, dir, "config", "user.name", "Slopradar Test")
+			gitCommand(t, dir, "config", "user.email", "test@slopradar.invalid")
+			if err := os.MkdirAll(filepath.Join(dir, "src/foo", name), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, dir, "src/lib.rs", "#[cfg(test)] mod foo;\n")
+			writeFile(t, dir, "src/foo.rs", "mod "+name+";\n")
+			writeFile(t, dir, "src/foo/"+name+".rs", "mod child; fn entry() {}\n")
+			child := "src/foo/" + name + "/child.rs"
+			writeFile(t, dir, child, "fn child(x: bool) {}\n")
+			gitCommand(t, dir, "add", ".")
+			gitCommand(t, dir, "commit", "-m", "before")
+			writeFile(t, dir, child, "fn child(x: bool) { if x {} }\n")
+			gitCommand(t, dir, "add", ".")
+			gitCommand(t, dir, "commit", "-m", "after")
+			t.Chdir(dir)
+			for _, target := range []string{dir, "HEAD"} {
+				var output bytes.Buffer
+				if err := run(context.Background(), []string{"scan", target, "--format=json", "--no-cache"}, &output); err != nil {
+					t.Fatal(err)
+				}
+				var got model.Snapshot
+				if err := json.Unmarshal(output.Bytes(), &got); err != nil {
+					t.Fatal(err)
+				}
+				if len(got.Warnings) != 0 || got.Buckets[model.Source].Functions != 0 || got.Buckets[model.Tests].Functions != 2 {
+					t.Fatalf("snapshot = %#v", got)
+				}
+			}
+			var output bytes.Buffer
+			if err := run(context.Background(), []string{"diff", "--base", "HEAD^", "--head", "HEAD", "--trend", "12", "--format=json", "--no-cache"}, &output); err != nil {
+				t.Fatal(err)
+			}
+			var got model.Diff
+			if err := json.Unmarshal(output.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			if len(got.Functions) != 1 || got.Functions[0].File != child || got.Functions[0].Before.CC != 1 || got.Functions[0].After.CC != 2 || got.Functions[0].After.Bucket != model.Tests || len(got.Trend) == 0 {
+				t.Fatalf("diff = %#v", got)
+			}
+		})
 	}
 }

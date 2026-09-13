@@ -11,7 +11,7 @@ import (
 	"github.com/SolenesInc/slopradar/internal/model"
 )
 
-const AnalyzerVersion = "15"
+const AnalyzerVersion = "16"
 
 type Store struct {
 	root    string

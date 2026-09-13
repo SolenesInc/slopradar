@@ -251,27 +251,41 @@ func functionName(node ast.Node, parents map[ast.Node]ast.Node, source []byte) s
 		}
 		return receiverType(declaration.Recv) + "." + declaration.Name.Name
 	}
-	for parent := parents[node]; parent != nil; parent = parents[parent] {
+	suffix := ""
+	for child, parent := node, parents[node]; parent != nil; child, parent = parent, parents[parent] {
 		switch owner := parent.(type) {
 		case *ast.AssignStmt:
 			if target := assignmentTarget(owner.Lhs, owner.Rhs, node, source); target != "" {
-				return target
+				return target + suffix
 			}
 		case *ast.ValueSpec:
 			if target := valueSpecTarget(owner, node); target != nil {
-				return target.Name
+				return target.Name + suffix
 			}
 		case *ast.KeyValueExpr:
 			if contains(owner.Value, node) {
-				return strings.Trim(sourceText(owner.Key, source), "\"'`")
+				suffix = "." + strings.Trim(sourceText(owner.Key, source), "\"'`") + suffix
+			}
+		case *ast.CompositeLit:
+			if _, keyed := child.(*ast.KeyValueExpr); !keyed {
+				if index := expressionIndex(owner.Elts, node); index >= 0 {
+					suffix = fmt.Sprintf("[%d]", index) + suffix
+				}
 			}
 		case *ast.CallExpr:
 			if expressionIndex(owner.Args, node) >= 0 {
-				return "cb:" + compact(sourceText(owner.Fun, source))
+				return "cb:" + compact(sourceText(owner.Fun, source)) + suffix
 			}
 		case *ast.FuncLit, *ast.FuncDecl:
-			return "(anonymous)"
+			return anonymousName(suffix)
 		}
+	}
+	return anonymousName(suffix)
+}
+
+func anonymousName(suffix string) string {
+	if suffix != "" {
+		return strings.TrimPrefix(suffix, ".")
 	}
 	return "(anonymous)"
 }

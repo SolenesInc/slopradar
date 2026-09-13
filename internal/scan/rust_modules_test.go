@@ -48,6 +48,12 @@ func TestRustExternalModuleScopes(t *testing.T) {
 		{"integration crate root", map[string]string{"tests/integration.rs": "mod common; fn entry() {}", "tests/common/mod.rs": "#[path=\"../../src/helpers.rs\"] mod helpers;", "src/helpers.rs": "fn helper() {}"}, []string{"tests/integration.rs", "src/helpers.rs"}, false},
 		{"example crate root", map[string]string{"examples/demo.rs": "#[cfg(test)] mod helpers; fn example() {}", "examples/helpers/mod.rs": "fn helper() {}"}, []string{"examples/helpers/mod.rs"}, false},
 		{"test path inheritance", map[string]string{"tests/integration.rs": "#[path=\"../src/helpers.rs\"] mod helpers;", "src/helpers.rs": "fn helper() {}"}, []string{"src/helpers.rs"}, false},
+		{"nested main is a module", map[string]string{"src/lib.rs": "#[cfg(test)] mod foo;", "src/foo.rs": "mod main;", "src/foo/main.rs": "mod child; fn entry() {}", "src/foo/main/child.rs": "fn child() {}"}, []string{"src/foo/main.rs", "src/foo/main/child.rs"}, false},
+		{"nested lib is a module", map[string]string{"src/lib.rs": "#[cfg(test)] mod foo;", "src/foo.rs": "mod lib;", "src/foo/lib.rs": "mod child; fn entry() {}", "src/foo/lib/child.rs": "fn child() {}"}, []string{"src/foo/lib.rs", "src/foo/lib/child.rs"}, false},
+		{"multifile src/bin root", map[string]string{"src/bin/demo/main.rs": "#[cfg(test)] mod child;", "src/bin/demo/child.rs": "fn child() {}"}, []string{"src/bin/demo/child.rs"}, false},
+		{"multifile tests root", map[string]string{"tests/demo/main.rs": "#[cfg(test)] mod child;", "tests/demo/child.rs": "fn child() {}"}, []string{"tests/demo/child.rs"}, false},
+		{"multifile examples root", map[string]string{"examples/demo/main.rs": "#[cfg(test)] mod child;", "examples/demo/child.rs": "fn child() {}"}, []string{"examples/demo/child.rs"}, false},
+		{"multifile benches root", map[string]string{"benches/demo/main.rs": "#[cfg(test)] mod child;", "benches/demo/child.rs": "fn child() {}"}, []string{"benches/demo/child.rs"}, false},
 		{"unrooted cycle", map[string]string{"src/a.rs": "#[path=\"b.rs\"] mod b; fn a() {}", "src/b.rs": "#[path=\"a.rs\"] mod a; fn b() {}"}, nil, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
