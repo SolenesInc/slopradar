@@ -60,6 +60,17 @@ comment and updates that same comment on later runs. On a fork pull request
 whose token cannot write comments, it keeps the summary and says in the job log
 that it skipped the comment. The numbers never fail the job.
 
+Reports within GitHub's
+[65,536 UTF-16-code-unit comment capacity](https://github.com/github/branch-deploy/blob/826fd07b4eae2e0a6b750c2a19d68b6c8d509cc0/__tests__/functions/truncate-comment-body.test.ts)
+appear in full. Above it, the comment keeps the complete headline-and-bucket
+prefix when it fits, then names the capacity and actual size and links the
+workflow run. If that prefix is itself too large, the comment falls back to a
+short linked notice. If a report exceeds GitHub's
+[1 MiB job-summary capacity](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#step-isolation-and-limits),
+the action uploads the untouched Markdown as an artifact and posts a compact
+linked summary. It never cuts through a table or code fence; the exact edges
+are covered by the [boundary tests](scripts/report-bounds.test.cjs).
+
 The action accepts `base` (the pull request's base ref by default),
 `trend-months` (`0` disables the trend), and `comment` (`true` by default).
 
