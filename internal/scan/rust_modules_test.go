@@ -39,6 +39,9 @@ func TestRustExternalModuleScopes(t *testing.T) {
 		{"missing", map[string]string{"src/lib.rs": "#[cfg(test)] mod missing;", "src/other.rs": "fn other() {}"}, nil, true},
 		{"ambiguous layouts", map[string]string{"src/lib.rs": "#[cfg(test)] mod helpers;", "src/helpers.rs": "fn helper() {}", "src/helpers/mod.rs": "fn helper() {}"}, nil, true},
 		{"conditional path", map[string]string{"src/lib.rs": "#[cfg(test)] #[cfg_attr(unix, path=\"other.rs\")] mod helpers;", "src/helpers.rs": "fn helper() {}", "src/other.rs": "fn other() {}"}, nil, true},
+
+		{"integration crate root", map[string]string{"tests/integration.rs": "mod common; fn entry() {}", "tests/common/mod.rs": "#[path=\"../../src/helpers.rs\"] mod helpers;", "src/helpers.rs": "fn helper() {}"}, []string{"tests/integration.rs", "src/helpers.rs"}, false},
+		{"example crate root", map[string]string{"examples/demo.rs": "#[cfg(test)] mod helpers; fn example() {}", "examples/helpers/mod.rs": "fn helper() {}"}, []string{"examples/helpers/mod.rs"}, false},
 		{"test path inheritance", map[string]string{"tests/integration.rs": "#[path=\"../src/helpers.rs\"] mod helpers;", "src/helpers.rs": "fn helper() {}"}, []string{"src/helpers.rs"}, false},
 		{"unrooted cycle", map[string]string{"src/a.rs": "#[path=\"b.rs\"] mod b; fn a() {}", "src/b.rs": "#[path=\"a.rs\"] mod a; fn b() {}"}, nil, false},
 	} {
