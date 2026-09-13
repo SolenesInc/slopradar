@@ -61,7 +61,7 @@ func runDiff(ctx context.Context, args []string, output io.Writer) error {
 	if err := model.ValidateComplete(headSnapshot); err != nil {
 		return fmt.Errorf("head snapshot: %w", err)
 	}
-	lineChanges, err := repository.LineChanges(ctx, base, head, cloneMappingPaths(baseSnapshot, headSnapshot, touched))
+	lineChanges, err := repository.LineChanges(ctx, base, head, lineMappingPaths(baseSnapshot, headSnapshot, touched))
 	if err != nil {
 		return err
 	}
@@ -86,7 +86,7 @@ func runDiff(ctx context.Context, args []string, output io.Writer) error {
 	return report.WriteDiff(output, options.format, result, report.ColorEnabled(output))
 }
 
-func cloneMappingPaths(base, head model.Snapshot, touched []string) []string {
+func lineMappingPaths(base, head model.Snapshot, touched []string) []string {
 	before := make(map[string]bool, len(base.AnalysisPaths))
 	for _, path := range base.AnalysisPaths {
 		before[path.File] = path.GitLineCoordinates
@@ -95,19 +95,24 @@ func cloneMappingPaths(base, head model.Snapshot, touched []string) []string {
 	for _, path := range head.AnalysisPaths {
 		compatible[path.File] = before[path.File] && path.GitLineCoordinates
 	}
-	cloneFiles := make(map[string]struct{}, len(base.Clones)+len(head.Clones))
+	mappedFiles := make(map[string]struct{}, len(base.Clones)+len(head.Clones))
 	for _, pairs := range [][]model.ClonePair{base.Clones, head.Clones} {
 		for _, pair := range pairs {
-			cloneFiles[pair.A.File] = struct{}{}
-			cloneFiles[pair.B.File] = struct{}{}
+			mappedFiles[pair.A.File] = struct{}{}
+			mappedFiles[pair.B.File] = struct{}{}
+		}
+	}
+	for _, functions := range [][]model.Function{base.Functions, head.Functions} {
+		for _, function := range functions {
+			mappedFiles[function.File] = struct{}{}
 		}
 	}
 	touchedFiles := make(map[string]struct{}, len(touched))
 	for _, file := range touched {
 		touchedFiles[file] = struct{}{}
 	}
-	paths := make([]string, 0, len(cloneFiles))
-	for file := range cloneFiles {
+	paths := make([]string, 0, len(mappedFiles))
+	for file := range mappedFiles {
 		_, isTouched := touchedFiles[file]
 		if compatible[file] && isTouched {
 			paths = append(paths, file)

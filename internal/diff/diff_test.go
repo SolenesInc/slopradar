@@ -95,6 +95,37 @@ func TestBuildKeepsNestedChangesWhenParentMetricsAreEqual(t *testing.T) {
 	}
 }
 
+func TestBuildMapsRepeatedNestedFunctionsBeforeMatchingMetrics(t *testing.T) {
+	before := functionAt("same.go", "outer", model.Source, 1, 7, 30)
+	before.Nested = []model.Function{
+		functionAt("same.go", "(anonymous)", model.Source, 10, 2, 1),
+		functionAt("same.go", "(anonymous)", model.Source, 20, 4, 1),
+	}
+	after := functionAt("same.go", "outer", model.Source, 3, 9, 30)
+	after.Nested = []model.Function{
+		functionAt("same.go", "(anonymous)", model.Source, 12, 4, 1),
+		functionAt("same.go", "(anonymous)", model.Source, 22, 4, 1),
+	}
+	base := snapshot("base", []model.Function{before}, model.Totals{}, model.Totals{})
+	head := snapshot("head", []model.Function{after}, model.Totals{}, model.Totals{})
+	base.AnalysisPaths = []model.AnalysisPath{{File: "same.go", Bucket: model.Source, GitLineCoordinates: true}}
+	head.AnalysisPaths = base.AnalysisPaths
+	got, err := BuildWithLineChanges(base, head, []string{"same.go"}, []gitread.LineChange{
+		{File: "same.go", BeforeStart: 0, AfterStart: 1, AfterCount: 2},
+		{File: "same.go", BeforeStart: 10, BeforeCount: 1, AfterStart: 12, AfterCount: 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Functions) != 1 || len(got.Functions[0].Nested) != 1 {
+		t.Fatalf("deltas = %#v", got.Functions)
+	}
+	delta := got.Functions[0].Nested[0]
+	if delta.Before == nil || delta.After == nil || delta.Before.Line != 10 || delta.After.Line != 12 || delta.Before.CC != 2 || delta.After.CC != 4 {
+		t.Fatalf("nested before = %+v, after = %+v", delta.Before, delta.After)
+	}
+}
+
 func TestBuildScopesDuplicateNestedNamesToTheirParent(t *testing.T) {
 	baseA := nestedParent("outerA", 1, 2)
 	baseB := nestedParent("outerB", 10, 3)

@@ -255,7 +255,7 @@ func TestDiffRejectsHeadThatCrossesFileSizeTripwire(t *testing.T) {
 	}
 }
 
-func TestCloneMappingPathsSelectsCompatibleCloneFilesInBothSnapshots(t *testing.T) {
+func TestLineMappingPathsSelectsCompatibleCloneFilesInBothSnapshots(t *testing.T) {
 	base := model.Snapshot{
 		AnalysisPaths: []model.AnalysisPath{
 			{File: "b.go", GitLineCoordinates: true},
@@ -285,12 +285,12 @@ func TestCloneMappingPathsSelectsCompatibleCloneFilesInBothSnapshots(t *testing.
 	}
 	want := []string{"a.go"}
 	touched := []string{"unrelated.go", "removed.go", "added.go", "ambiguous.js", "a.go"}
-	if got := cloneMappingPaths(base, head, touched); !reflect.DeepEqual(got, want) {
+	if got := lineMappingPaths(base, head, touched); !reflect.DeepEqual(got, want) {
 		t.Fatalf("clone mapping paths = %#v, want %#v", got, want)
 	}
 }
 
-func BenchmarkCloneLineChanges(b *testing.B) {
+func BenchmarkDiffLineChanges(b *testing.B) {
 	repositoryPath := os.Getenv("SLOPRADAR_BENCH_REPOSITORY")
 	base := os.Getenv("SLOPRADAR_BENCH_BASE")
 	head := os.Getenv("SLOPRADAR_BENCH_HEAD")
@@ -314,7 +314,7 @@ func BenchmarkCloneLineChanges(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	paths := cloneMappingPaths(baseSnapshot, headSnapshot, touched)
+	paths := lineMappingPaths(baseSnapshot, headSnapshot, touched)
 	b.ResetTimer()
 	for range b.N {
 		changes, err := repository.LineChanges(ctx, base, head, paths)
@@ -458,6 +458,48 @@ func TestDiffPreservesRepeatedFunctionsWhenOneIsInsertedAndRemoved(t *testing.T)
 	removed := commandDiff(t, head, removedHead)
 	if len(removed.Functions) != 1 || removed.Functions[0].Name != "init" || removed.Functions[0].Before.CC != 4 || removed.Functions[0].After != nil || removed.Functions[0].Note != "removed" {
 		t.Fatalf("removed repeated function diff = %#v", removed.Functions)
+	}
+}
+
+func TestDiffLocatesRepeatedInitWhenMetricsConverge(t *testing.T) {
+	for _, prefix := range []string{"", "\n\n"} {
+		t.Run(fmt.Sprintf("shift_%d", len(prefix)), func(t *testing.T) {
+			dir := t.TempDir()
+			gitCommand(t, dir, "init", "-b", "main")
+			gitCommand(t, dir, "config", "user.name", "Slopradar Test")
+			gitCommand(t, dir, "config", "user.email", "test@slopradar.invalid")
+			before := "package fixture\n\nfunc init() { if a {} }\n\nfunc init() { if b && c && d {} }\n"
+			after := "package fixture\n\n" + prefix + "func init() { if a && e && f {} }\n\nfunc init() { if b && c && d {} }\n"
+			writeFile(t, dir, "repeated.go", before)
+			gitCommand(t, dir, "add", ".")
+			gitCommand(t, dir, "commit", "-m", "base")
+			base := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+			writeFile(t, dir, "repeated.go", after)
+			gitCommand(t, dir, "add", ".")
+			gitCommand(t, dir, "commit", "-m", "converge init metrics")
+			head := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+			writeFile(t, dir, "repeated.go", before)
+			gitCommand(t, dir, "add", ".")
+			gitCommand(t, dir, "commit", "-m", "restore first init")
+			restored := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+			t.Chdir(dir)
+			for _, test := range []struct {
+				base, head                               string
+				beforeLine, afterLine, beforeCC, afterCC int
+			}{
+				{base, head, 3, 3 + len(prefix), 2, 4},
+				{head, restored, 3 + len(prefix), 3, 4, 2},
+			} {
+				result := commandDiff(t, test.base, test.head)
+				if len(result.Functions) != 1 {
+					t.Fatalf("deltas = %#v", result.Functions)
+				}
+				delta := result.Functions[0]
+				if delta.Before == nil || delta.After == nil || delta.Before.Line != test.beforeLine || delta.After.Line != test.afterLine || delta.Before.CC != test.beforeCC || delta.After.CC != test.afterCC {
+					t.Fatalf("before = %+v, after = %+v; want lines %d -> %d and CC %d -> %d", delta.Before, delta.After, test.beforeLine, test.afterLine, test.beforeCC, test.afterCC)
+				}
+			}
+		})
 	}
 }
 

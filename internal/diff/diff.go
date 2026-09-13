@@ -48,17 +48,18 @@ func BuildWithLineChanges(base, head model.Snapshot, touched []string, lineChang
 		}
 	}
 
+	mappings := newLineMappings(lineChanges, compatibleGitLineCoordinates(base.AnalysisPaths, head.AnalysisPaths))
 	baseFunctions := groupFunctions(base.Functions, touchedSet)
 	headFunctions := groupFunctions(head.Functions, touchedSet)
 	for _, key := range functionKeys(baseFunctions, headFunctions) {
-		for _, delta := range functionDeltas(key, baseFunctions[key], headFunctions[key]) {
+		for _, delta := range functionDeltas(key, baseFunctions[key], headFunctions[key], mappings) {
 			result.Functions = append(result.Functions, delta)
 			addFunctionMass(result.Buckets, delta)
 		}
 	}
 	sortFunctionDeltas(result.Functions)
 
-	result.ClonesAdded, result.ClonesRemoved = cloneChanges(base.Clones, head.Clones, touchedSet, newLineMappings(lineChanges, compatibleGitLineCoordinates(base.AnalysisPaths, head.AnalysisPaths)))
+	result.ClonesAdded, result.ClonesRemoved = cloneChanges(base.Clones, head.Clones, touchedSet, mappings)
 	baseCloneLines := touchedCloneLines(base.CloneCoverage, touchedSet)
 	headCloneLines := touchedCloneLines(head.CloneCoverage, touchedSet)
 	for _, bucket := range []model.Bucket{model.Source, model.Tests} {
@@ -125,30 +126,59 @@ func analysisPathBuckets(paths []model.AnalysisPath) map[string]model.Bucket {
 	return result
 }
 
-func changedFunctions(before, after []model.Function) ([]model.Function, []model.Function) {
-	afterBySignature := make(map[string][]int, len(after))
-	for i, function := range after {
-		signature := functionTreeSignature(function)
-		afterBySignature[signature] = append(afterBySignature[signature], i)
+func changedFunctions(before, after []model.Function, mappings lineMappings) ([]model.Function, []model.Function) {
+	type signaturePosition struct {
+		signature string
+		line      int
 	}
-	matchedBySignature := make(map[string]int, len(afterBySignature))
+	afterByPosition := make(map[signaturePosition][]int, len(after))
+	afterSignatures := make([]string, len(after))
+	for i, function := range after {
+		afterSignatures[i] = functionTreeSignature(function)
+		position := signaturePosition{afterSignatures[i], function.Line}
+		afterByPosition[position] = append(afterByPosition[position], i)
+	}
+	matchedBefore := make([]bool, len(before))
 	matchedAfter := make([]bool, len(after))
-	changedBefore := make([]model.Function, 0, len(before))
-	for _, baseFunction := range before {
-		signature := functionTreeSignature(baseFunction)
-		matched := matchedBySignature[signature]
-		candidates := afterBySignature[signature]
-		if matched == len(candidates) {
-			changedBefore = append(changedBefore, baseFunction)
+	beforeSignatures := make([]string, len(before))
+	for i, function := range before {
+		beforeSignatures[i] = functionTreeSignature(function)
+		line, mapped := mappings.line(function.File, function.Line)
+		if !mapped {
 			continue
 		}
-		matchedAfter[candidates[matched]] = true
-		matchedBySignature[signature]++
+		position := signaturePosition{beforeSignatures[i], line}
+		candidates := afterByPosition[position]
+		if len(candidates) != 0 {
+			matchedBefore[i] = true
+			matchedAfter[candidates[0]] = true
+			afterByPosition[position] = candidates[1:]
+		}
+	}
+	afterBySignature := make(map[string][]int, len(after))
+	for i, signature := range afterSignatures {
+		if !matchedAfter[i] {
+			afterBySignature[signature] = append(afterBySignature[signature], i)
+		}
+	}
+	changedBefore := make([]model.Function, 0, len(before))
+	for i, function := range before {
+		if matchedBefore[i] {
+			continue
+		}
+		signature := beforeSignatures[i]
+		candidates := afterBySignature[signature]
+		if len(candidates) == 0 {
+			changedBefore = append(changedBefore, function)
+			continue
+		}
+		matchedAfter[candidates[0]] = true
+		afterBySignature[signature] = candidates[1:]
 	}
 	changedAfter := make([]model.Function, 0, len(after))
-	for i, headFunction := range after {
+	for i, function := range after {
 		if !matchedAfter[i] {
-			changedAfter = append(changedAfter, headFunction)
+			changedAfter = append(changedAfter, function)
 		}
 	}
 	return changedBefore, changedAfter
@@ -184,8 +214,8 @@ func writeSignatureString(signature *strings.Builder, value string) {
 	signature.WriteString(value)
 }
 
-func functionDeltas(key functionKey, before, after []model.Function) []model.FunctionDelta {
-	before, after = changedFunctions(before, after)
+func functionDeltas(key functionKey, before, after []model.Function, mappings lineMappings) []model.FunctionDelta {
+	before, after = changedFunctions(before, after, mappings)
 	count := max(len(before), len(after))
 	deltas := make([]model.FunctionDelta, 0, count)
 	for i := 0; i < count; i++ {
@@ -198,12 +228,12 @@ func functionDeltas(key functionKey, before, after []model.Function) []model.Fun
 			item := after[i]
 			headFunction = &item
 		}
-		deltas = append(deltas, functionDelta(key, baseFunction, headFunction))
+		deltas = append(deltas, functionDelta(key, baseFunction, headFunction, mappings))
 	}
 	return deltas
 }
 
-func nestedFunctionDeltas(before, after *model.Function) []model.FunctionDelta {
+func nestedFunctionDeltas(before, after *model.Function, mappings lineMappings) []model.FunctionDelta {
 	var baseGroups, headGroups map[functionKey][]model.Function
 	if before != nil {
 		baseGroups = groupNestedFunctions(before.Nested)
@@ -218,7 +248,7 @@ func nestedFunctionDeltas(before, after *model.Function) []model.FunctionDelta {
 	keys := functionKeys(baseGroups, headGroups)
 	deltas := []model.FunctionDelta{}
 	for _, key := range keys {
-		deltas = append(deltas, functionDeltas(key, baseGroups[key], headGroups[key])...)
+		deltas = append(deltas, functionDeltas(key, baseGroups[key], headGroups[key], mappings)...)
 	}
 	sortFunctionDeltas(deltas)
 	return deltas
@@ -286,9 +316,9 @@ func functionLess(left, right model.Function) bool {
 	return left.SLOC < right.SLOC
 }
 
-func functionDelta(key functionKey, before, after *model.Function) model.FunctionDelta {
+func functionDelta(key functionKey, before, after *model.Function, mappings lineMappings) model.FunctionDelta {
 	delta := model.FunctionDelta{File: key.file, Name: key.name, Before: before, After: after}
-	delta.Nested = nestedFunctionDeltas(before, after)
+	delta.Nested = nestedFunctionDeltas(before, after, mappings)
 	if before != nil {
 		delta.DeltaMass -= before.Mass
 	}
