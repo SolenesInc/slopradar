@@ -116,6 +116,9 @@ func isTest(file string, additions []string) bool {
 			return true
 		}
 	case ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs":
+		if ext == ".ts" || ext == ".mts" || ext == ".cts" {
+			stem = strings.TrimSuffix(stem, ".d")
+		}
 		if strings.HasSuffix(stem, ".test") || strings.HasSuffix(stem, ".spec") {
 			return true
 		}

@@ -195,3 +195,19 @@ func TestGeneratedMarkersMustAppearInComments(t *testing.T) {
 		}
 	}
 }
+
+func TestDeclarationTestFileSuffixes(t *testing.T) {
+	for _, suffix := range []string{".d.ts", ".d.mts", ".d.cts"} {
+		for _, marker := range []string{".test", ".spec"} {
+			file := "src/widget" + marker + suffix
+			if got := Classify(file, nil, Config{}); got.Bucket != Tests {
+				t.Errorf("%s bucket=%s", file, got.Bucket)
+			}
+		}
+		for _, name := range []string{"widget", "widget.tested"} {
+			if got := Classify("src/"+name+suffix, nil, Config{}); got.Bucket != Source {
+				t.Errorf("%s%s bucket=%s", name, suffix, got.Bucket)
+			}
+		}
+	}
+}

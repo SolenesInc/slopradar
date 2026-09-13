@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	analysiscache "github.com/SolenesInc/slopradar/internal/cache"
+	"github.com/SolenesInc/slopradar/internal/clones"
 	"github.com/SolenesInc/slopradar/internal/gitread"
 	"github.com/SolenesInc/slopradar/internal/model"
 )
@@ -531,4 +532,39 @@ func javascriptFinalTemplateClone(terminator, operator string) []byte {
 	}
 	template := "`" + strings.Join([]string{"one", "two", "three", "four", "five"}, terminator) + "`"
 	return []byte("// ignored" + terminator + "const result = " + strings.Join(operands, " + ") + " + " + template + " " + operator + " tail")
+}
+
+func TestDeclarationTestFilesUseTestLineAndCloneBuckets(t *testing.T) {
+	for _, suffix := range []string{".d.ts", ".d.mts", ".d.cts"} {
+		t.Run(suffix, func(t *testing.T) {
+			dir := t.TempDir()
+			var source strings.Builder
+			source.WriteString("export interface Example {\n")
+			for i := range clones.JscpdDefaultMinimumTokens {
+				fmt.Fprintf(&source, "field%d: string;\n", i)
+			}
+			source.WriteString("}\n")
+			writeScanFile(t, dir, "first.test"+suffix, source.String())
+			writeScanFile(t, dir, "second.spec"+suffix, source.String())
+			gitForScan(t, dir, "init", "-b", "main")
+			gitForScan(t, dir, "config", "user.name", "Slopradar Test")
+			gitForScan(t, dir, "config", "user.email", "test@slopradar.invalid")
+			gitForScan(t, dir, "add", ".")
+			gitForScan(t, dir, "commit", "-m", "declaration tests")
+			directory, err := Directory(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			revision, err := Revision(context.Background(), dir, "HEAD")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(directory.Buckets, revision.Buckets) || !reflect.DeepEqual(directory.Clones, revision.Clones) {
+				t.Fatal("directory and Git buckets differ")
+			}
+			if len(directory.Warnings) != 0 || directory.Buckets[model.Source].SourceLines != 0 || directory.Buckets[model.Source].CloneLines != 0 || directory.Buckets[model.Tests].SourceLines == 0 || directory.Buckets[model.Tests].CloneLines == 0 {
+				t.Fatalf("snapshot = %#v", directory)
+			}
+		})
+	}
 }
