@@ -212,6 +212,14 @@ func (r *Repository) ResolveRevision(ctx context.Context, rev string) (string, e
 	return strings.TrimSuffix(string(out), "\n"), nil
 }
 
+func (r *Repository) ResolveTree(ctx context.Context, rev string) (string, error) {
+	out, err := gitOutput(ctx, r.dir, "rev-parse", "--verify", rev+"^{tree}")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(string(out), "\n"), nil
+}
+
 func (r *Repository) MergeBase(ctx context.Context, base, head string) (string, error) {
 	out, err := gitOutput(ctx, r.dir, "merge-base", base, head)
 	if err != nil {

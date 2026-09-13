@@ -99,18 +99,18 @@ func TestMergesReturnsRequestedFirstParentMergesInTrendOrder(t *testing.T) {
 	}
 }
 
-func TestBuildKeepsOnlyTrendTotals(t *testing.T) {
+func TestBuildKeepsCommitIdentitiesAndTotalsForIdenticalTrees(t *testing.T) {
 	commits := []gitread.Commit{{Rev: "one", Date: "2026-01-01T00:00:00Z"}, {Rev: "two", Date: "2026-02-01T00:00:00Z"}}
 	got, err := Build(context.Background(), commits, func(_ context.Context, rev string) (model.Snapshot, error) {
 		return model.Snapshot{
-			Rev: rev + "-resolved", Functions: []model.Function{{Name: "discarded"}},
+			Rev: "shared-tree", Functions: []model.Function{{Name: "discarded"}},
 			Buckets: map[model.Bucket]model.Totals{model.Source: {Erosion: 0.25}, model.Tests: {CloneShare: 0.5}},
 		}, nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 || got[1].Rev != "two-resolved" || got[1].Date != commits[1].Date || got[0].Buckets[model.Source].Erosion != 0.25 || got[0].Buckets[model.Tests].CloneShare != 0.5 {
+	if len(got) != 2 || got[0].Rev != "one" || got[1].Rev != "two" || got[1].Date != commits[1].Date || got[0].Buckets[model.Source].Erosion != 0.25 || got[0].Buckets[model.Tests].CloneShare != 0.5 {
 		t.Fatalf("points = %#v", got)
 	}
 }

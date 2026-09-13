@@ -65,7 +65,7 @@ func RevisionWithCache(ctx context.Context, root, rev string, cache *analysiscac
 	if err != nil {
 		return model.Snapshot{}, err
 	}
-	resolved, err := repository.ResolveRevision(ctx, rev)
+	resolved, err := repository.ResolveTree(ctx, rev)
 	if err != nil {
 		return model.Snapshot{}, err
 	}

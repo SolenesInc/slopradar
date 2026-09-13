@@ -69,6 +69,8 @@ func runDiff(ctx context.Context, args []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
+	result.Base = base
+	result.Head = head
 	if options.trendMonths != 0 {
 		commits, err := trendcalc.Months(ctx, repository, head, options.trendMonths)
 		if err != nil {

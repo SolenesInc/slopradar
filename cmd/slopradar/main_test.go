@@ -42,6 +42,54 @@ func TestScanDirectoryJSONIsDeterministic(t *testing.T) {
 	}
 }
 
+func TestScanIdenticalTreesProduceIdenticalBytes(t *testing.T) {
+	dir := t.TempDir()
+	gitCommand(t, dir, "init", "-b", "main")
+	gitCommand(t, dir, "config", "user.name", "Slopradar Test")
+	gitCommand(t, dir, "config", "user.email", "test@slopradar.invalid")
+	writeFile(t, dir, "source.go", cc12Source())
+	writeFile(t, dir, "source_test.go", "package fixture\n\nfunc TestRun() {}\n")
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "source")
+	first := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+	tree := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD^{tree}"))
+	gitCommand(t, dir, "commit", "--allow-empty", "-m", "same tree")
+	second := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+	writeFile(t, dir, "extra.go", "package fixture\n\nfunc extra() {}\n")
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "different tree")
+	third := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+	otherTree := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD^{tree}"))
+	t.Chdir(dir)
+	for _, format := range []string{"json", "md", "text"} {
+		t.Run(format, func(t *testing.T) {
+			outputs := make([]string, 0, 3)
+			for _, rev := range []string{first, second, third} {
+				var output bytes.Buffer
+				if err := run(context.Background(), []string{"scan", rev, "--format", format, "--no-cache"}, &output); err != nil {
+					t.Fatal(err)
+				}
+				outputs = append(outputs, output.String())
+			}
+			if outputs[0] != outputs[1] {
+				t.Errorf("commits %s and %s share tree %s but scan bytes differ", first, second, tree)
+			}
+			if !strings.Contains(outputs[0], tree) || !strings.Contains(outputs[2], otherTree) || outputs[0] == outputs[2] {
+				t.Errorf("scan output must identify its input tree: first=%q third=%q", outputs[0], outputs[2])
+			}
+			if format == "json" {
+				var snapshot model.Snapshot
+				if err := json.Unmarshal([]byte(outputs[0]), &snapshot); err != nil {
+					t.Fatal(err)
+				}
+				if snapshot.Rev != tree || snapshot.Buckets[model.Source].Functions != 1 || snapshot.Buckets[model.Tests].Functions != 1 {
+					t.Fatalf("snapshot = %#v", snapshot)
+				}
+			}
+		})
+	}
+}
+
 func TestScanArgsRejectsVisibleLimits(t *testing.T) {
 	_, _, _, err := scanArgs([]string{"one", "two"})
 	if err == nil || err.Error() != `scan accepts one revision or directory, got "two"` {
@@ -169,10 +217,11 @@ func TestDiffRejectsHeadThatCrossesFileSizeTripwire(t *testing.T) {
 	gitCommand(t, dir, "add", ".")
 	gitCommand(t, dir, "commit", "-m", "cross size tripwire")
 	head := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+	headTree := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD^{tree}"))
 	t.Chdir(dir)
 	var output bytes.Buffer
 	err := run(context.Background(), []string{"diff", "--base", base, "--head", head, "--format", "json", "--no-cache"}, &output)
-	want := fmt.Sprintf("head snapshot: analysis of revision %q incomplete: file %q: max_file_bytes=%d, asked_bytes=%d", head, "source.go", model.MaxFileBytes, askedBytes)
+	want := fmt.Sprintf("head snapshot: analysis of revision %q incomplete: file %q: max_file_bytes=%d, asked_bytes=%d", headTree, "source.go", model.MaxFileBytes, askedBytes)
 	if err == nil || err.Error() != want {
 		t.Fatalf("error = %v, want %q", err, want)
 	}

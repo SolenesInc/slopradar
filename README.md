@@ -103,6 +103,10 @@ slopradar trend (--merges <count> | --months <count>) [--format text|md|json] [-
 target reads Git objects without checking them out. `diff` resolves its base to
 the merge base of `--base` and `--head`. `trend` walks first-parent history.
 
+Revision scans report the Git tree ID in `rev`, so commits with identical trees
+produce identical output. Directory scans use `directory`. Diff `base` and `head`
+and each trend point's `rev` retain commit IDs to identify the compared history.
+
 The cache stores analysis by blob SHA, language, and analyzer version under the
 operating system's user cache directory. `--no-cache` bypasses it. Deleting the
 cache is always safe, and slopradar never writes it into the repository being

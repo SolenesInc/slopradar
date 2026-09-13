@@ -98,7 +98,7 @@ func Build(ctx context.Context, commits []gitread.Commit, scan Scanner) ([]model
 			model.Source: snapshot.Buckets[model.Source],
 			model.Tests:  snapshot.Buckets[model.Tests],
 		}
-		points = append(points, model.TrendPoint{Rev: snapshot.Rev, Date: commit.Date, Buckets: buckets})
+		points = append(points, model.TrendPoint{Rev: commit.Rev, Date: commit.Date, Buckets: buckets})
 	}
 	return points, nil
 }
