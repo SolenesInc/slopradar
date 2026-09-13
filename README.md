@@ -191,7 +191,7 @@ precedence.
 ## Baselines
 
 These are source-bucket erosion measurements made with the shipped CLI at
-commit `6b991ce`, using Go `1.27.1` and `--no-cache`. Each row is restricted to
+commit `4a25522`, using Go `1.27.1` and `--no-cache`. Each row is restricted to
 the stated language and path because erosion is language-bound. The adjacent
 prototype value is the expectation recorded before the production parsers were
 integrated.
@@ -210,7 +210,7 @@ erosion() {
 
 | Corpus | Pinned revision | Shipped | Prototype | Command |
 | --- | --- | ---: | ---: | --- |
-| Go standard library | `go1.27.1`, `$GOROOT/src` | 0.741 | 0.743 | `slopradar scan --no-cache --format json "$GOROOT/src" \| erosion '\.go$'` |
+| Go standard library | `go1.27.1`, `$GOROOT/src` | 0.742 | 0.743 | `slopradar scan --no-cache --format json "$GOROOT/src" \| erosion '\.go$'` |
 | `golang.org/x/tools` | `v0.49.0` | 0.721 | 0.722 | `slopradar scan --no-cache --format json "$BASELINES/tools" \| erosion '\.go$'` |
 | `honnef.co/go/tools` (staticcheck) | `v0.8.1` | 0.748 | 0.749 | `slopradar scan --no-cache --format json "$BASELINES/staticcheck" \| erosion '\.go$'` |
 | `net/http` | `go1.27.1`, `$GOROOT/src/net/http` | 0.588 | 0.589 | `slopradar scan --no-cache --format json "$GOROOT/src/net/http" \| erosion '\.go$'` |
