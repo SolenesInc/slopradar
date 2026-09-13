@@ -616,6 +616,28 @@ func TestDiffReportsNestedFunctionChanges(t *testing.T) {
 	}
 }
 
+func TestDiffKeepsChangedObjectMethodWithItsOwner(t *testing.T) {
+	dir := t.TempDir()
+	gitCommand(t, dir, "init", "-b", "main")
+	gitCommand(t, dir, "config", "user.name", "Slopradar Test")
+	gitCommand(t, dir, "config", "user.email", "test@slopradar.invalid")
+	writeFile(t, dir, "objects.js", objectMethodSource(true))
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "base")
+	base := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+
+	writeFile(t, dir, "objects.js", objectMethodSource(false))
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "simplify a.run")
+	head := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+
+	t.Chdir(dir)
+	got := commandDiff(t, base, head)
+	if len(got.Functions) != 1 || got.Functions[0].Name != "a.run" || got.Functions[0].Before.Line != 2 || got.Functions[0].After.Line != 2 || got.Functions[0].Before.CC != 2 || got.Functions[0].After.CC != 1 {
+		t.Fatalf("function deltas = %#v", got.Functions)
+	}
+}
+
 func TestDiffReportGoldensFromThrowawayRepository(t *testing.T) {
 	goldenRoot, err := filepath.Abs(filepath.Join("..", "..", "testdata", "report"))
 	if err != nil {
@@ -830,6 +852,14 @@ func nestedCallbackSource(complex bool) string {
 		decision = "\t\tif value > 0 { return value }\n"
 	}
 	return "package fixture\n\nfunc outer() {\n\tuse(func(value int) int {\n" + decision + "\t\treturn 0\n\t})\n}\n"
+}
+
+func objectMethodSource(complex bool) string {
+	decision := ""
+	if complex {
+		decision = " if (value) return 1;"
+	}
+	return "const a = {\n  run(value) {" + decision + " return 0; }\n};\nconst b = {\n  run(value) { return 0; }\n};\n"
 }
 
 func commandDiff(t *testing.T, base, head string) model.Diff {

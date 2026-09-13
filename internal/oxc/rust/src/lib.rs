@@ -436,6 +436,20 @@ impl<'s> MetricVisitor<'s> {
         )
     }
 
+    fn object_member_name(&self, name: String, kind: PropertyKind) -> String {
+        let member = match kind {
+            PropertyKind::Init => name,
+            PropertyKind::Get => format!("get {name}"),
+            PropertyKind::Set => format!("set {name}"),
+        };
+        match self.hints.last() {
+            Some(owner) if owner != "(anonymous)" && !owner.starts_with("cb:") => {
+                format!("{owner}.{member}")
+            }
+            _ => member,
+        }
+    }
+
     fn with_hint(&mut self, hint: String, visit: impl FnOnce(&mut Self)) {
         self.hints.push(hint);
         visit(self);
@@ -494,7 +508,7 @@ impl<'a> Visit<'a> for MetricVisitor<'_> {
     }
 
     fn visit_object_property(&mut self, property: &ObjectProperty<'a>) {
-        let hint = self.name_for(property.key.span());
+        let hint = self.object_member_name(self.name_for(property.key.span()), property.kind);
         self.with_hint(hint, |visitor| {
             walk::walk_object_property(visitor, property)
         });
@@ -672,6 +686,37 @@ mod tests {
         assert_eq!(analysis.functions[4].nested[0].name, "(anonymous)");
         assert_eq!(analysis.functions[9].nested[0].name, "Inner.run");
         assert_eq!(analysis.functions[9].nested[1].name, "(anonymous)");
+    }
+
+    #[test]
+    fn qualifies_object_literal_members() {
+        let analysis = analyze_source(
+            "valid.ts",
+            "const owned = { run() {}, arrow: () => {}, functionValue: function() {}, get value() { return 1 }, set value(next: number) {}, nested: { run() {} }, explicit: function retained() {} }; assigned.target = { run() {}, nested: { arrow: () => {} } }; factory({ run() {}, arrow: () => {} }); function outer() { return { run() {} }; }",
+        );
+        let names = analysis
+            .functions
+            .iter()
+            .map(|function| function.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                "owned.run",
+                "owned.arrow",
+                "owned.functionValue",
+                "owned.get value",
+                "owned.set value",
+                "owned.nested.run",
+                "retained",
+                "assigned.target.run",
+                "assigned.target.nested.arrow",
+                "run",
+                "arrow",
+                "outer",
+            ]
+        );
+        assert_eq!(analysis.functions[11].nested[0].name, "run");
     }
 
     #[test]

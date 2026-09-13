@@ -163,6 +163,12 @@ Rust method names include their owner: `Worker::run` for an inherent method,
 implementation. Nested test functions retain their test bucket in drill-down
 rows; totals still include only top-level functions.
 
+JavaScript and TypeScript class and object-literal members also retain their
+owner, such as `Worker.run` and `worker.handlers.run`. Object ownership follows
+direct variable, assignment, and nested-property paths. It stops at function
+and callback boundaries, and an explicit function-expression name takes
+precedence.
+
 ## Baselines
 
 These are source-bucket erosion measurements made with the shipped CLI at

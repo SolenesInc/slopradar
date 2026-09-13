@@ -221,6 +221,50 @@ class Outer {
 	}
 }
 
+func TestAnalyzeQualifiesObjectLiteralMembers(t *testing.T) {
+	result, err := Analyze("objects.ts", []byte(`
+const owned = {
+  run() {},
+  arrow: () => {},
+  functionValue: function() {},
+  get value() { return 1 },
+  set value(next: number) {},
+  nested: { run() {} },
+  explicit: function retained() {},
+}
+assigned.target = { run() {}, nested: { arrow: () => {} } }
+factory({ run() {}, arrow: () => {} })
+function outer() { return { run() {} } }
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"owned.run",
+		"owned.arrow",
+		"owned.functionValue",
+		"owned.get value",
+		"owned.set value",
+		"owned.nested.run",
+		"retained",
+		"assigned.target.run",
+		"assigned.target.nested.arrow",
+		"run",
+		"arrow",
+		"outer",
+	}
+	got := make([]string, len(result.Functions))
+	for i, function := range result.Functions {
+		got[i] = function.Name
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("functions = %#v, want %#v", got, want)
+	}
+	if got := result.Functions[11].Nested; len(got) != 1 || got[0].Name != "run" {
+		t.Fatalf("returned object functions = %#v", got)
+	}
+}
+
 func TestAnalyzeRecognizesJavaScriptLineTerminators(t *testing.T) {
 	terminators := []struct {
 		name string

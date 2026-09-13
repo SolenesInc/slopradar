@@ -66,6 +66,12 @@ their source modifiers. Named class expressions use their internal name,
 assignment-owned anonymous expressions use the assignment or property name,
 and otherwise the owner remains `(anonymous class)`.
 
+Object-literal methods, accessors, arrows and anonymous function values use the
+direct variable, assignment, or nested-property path, such as
+`worker.handlers.run`. Function and callback boundaries stop ownership from
+leaking into returned or argument objects. Explicit function-expression names
+take precedence over their property path.
+
 JavaScript line accounting recognizes LF, CRLF, CR, U+2028 and U+2029.
 Comment removal preserves those terminators, so function lines, SLOC, token
 lines and clone coverage share the same source coordinates.
