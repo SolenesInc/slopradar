@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SolenesInc/slopradar/internal/diff"
 	"github.com/SolenesInc/slopradar/internal/model"
 )
 
@@ -159,6 +160,107 @@ factory(() => () => 3)
 		if result.Functions[i].Name != names[0] || len(result.Functions[i].Nested) != 1 || result.Functions[i].Nested[0].Name != names[1] {
 			t.Fatalf("functions[%d] = %#v, want %q with nested %q", i, result.Functions[i], names[0], names[1])
 		}
+	}
+}
+
+func TestAnalyzeQualifiesClassMembers(t *testing.T) {
+	result, err := Analyze("classes.ts", []byte(`
+class Declared {
+  run() {}
+  static build() {}
+  get value() { return 1 }
+  set value(next: number) {}
+  task = () => () => {}
+  static boot = () => {}
+}
+const Assigned = class {
+  run() {}
+}
+const Alias = class Internal {
+  run() {}
+}
+factory(class {
+  run() {}
+})
+class Outer {
+  method() {
+    class Inner {
+      run() {}
+    }
+    return () => {}
+  }
+}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"Declared.run",
+		"Declared.static build",
+		"Declared.get value",
+		"Declared.set value",
+		"Declared.task",
+		"Declared.static boot",
+		"Assigned.run",
+		"Internal.run",
+		"(anonymous class).run",
+		"Outer.method",
+	}
+	got := make([]string, len(result.Functions))
+	for i, function := range result.Functions {
+		got[i] = function.Name
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("functions = %#v, want %#v", got, want)
+	}
+	if got := result.Functions[4].Nested; len(got) != 1 || got[0].Name != "(anonymous)" {
+		t.Fatalf("class arrow property nested functions = %#v", got)
+	}
+	if got := result.Functions[9].Nested; len(got) != 2 || got[0].Name != "Inner.run" || got[1].Name != "(anonymous)" {
+		t.Fatalf("nested class functions = %#v", got)
+	}
+}
+
+func TestClassOwnershipKeepsDiffOnChangedMethod(t *testing.T) {
+	base := analyzeSnapshot(t, "base", `
+class A {
+  run() { if (ready) {} }
+}
+class B {
+  run() { if (ready) {} if (waiting) {} }
+}
+`)
+	head := analyzeSnapshot(t, "head", `
+class A {
+  run() { if (ready) {} if (waiting) {} }
+}
+class B {
+  run() { if (ready) {} if (waiting) {} }
+}
+`)
+	got, err := diff.Build(base, head, []string{"classes.ts"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Functions) != 1 || got.Functions[0].Name != "A.run" || got.Functions[0].Before.Line != 3 || got.Functions[0].After.Line != 3 {
+		t.Fatalf("function deltas = %#v", got.Functions)
+	}
+}
+
+func analyzeSnapshot(t *testing.T, rev, source string) model.Snapshot {
+	t.Helper()
+	result, err := Analyze("classes.ts", []byte(source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range result.Functions {
+		result.Functions[i].Bucket = model.Source
+	}
+	return model.Snapshot{
+		Rev:       rev,
+		Functions: result.Functions,
+		Clones:    []model.ClonePair{},
+		Buckets:   map[model.Bucket]model.Totals{model.Source: model.Summarize(result.Functions), model.Tests: {}},
 	}
 }
 

@@ -69,6 +69,44 @@ func TestClassifyLimitsBuiltInTestdataExclusionToGo(t *testing.T) {
 	}
 }
 
+func TestClassifyScopesTestDirectoriesByLanguage(t *testing.T) {
+	tests := []struct {
+		file string
+		want Bucket
+	}{
+		{file: "tests/helper.go", want: Source},
+		{file: "__tests__/helper.go", want: Source},
+		{file: "tests/helper.ts", want: Source},
+		{file: "__tests__/helper.ts", want: Tests},
+		{file: "__tests__/helper.tsx", want: Tests},
+		{file: "__tests__/helper.mts", want: Tests},
+		{file: "__tests__/helper.cts", want: Tests},
+		{file: "tests/helper.js", want: Source},
+		{file: "__tests__/helper.js", want: Tests},
+		{file: "__tests__/helper.jsx", want: Tests},
+		{file: "__tests__/helper.mjs", want: Tests},
+		{file: "__tests__/helper.cjs", want: Tests},
+		{file: "tests/helper.py", want: Tests},
+		{file: "__tests__/helper.py", want: Source},
+		{file: "tests/helper.rs", want: Tests},
+		{file: "__tests__/helper.rs", want: Source},
+	}
+	for _, test := range tests {
+		if got := Classify(test.file, nil, Config{}).Bucket; got != test.want {
+			t.Errorf("Classify(%q) bucket = %q, want %q", test.file, got, test.want)
+		}
+	}
+}
+
+func TestConfiguredTestGlobsApplyToEveryLanguage(t *testing.T) {
+	config := Config{TestGlobs: []string{"verification/"}}
+	for _, file := range []string{"verification/helper.go", "verification/helper.ts", "verification/helper.js", "verification/helper.py", "verification/helper.rs"} {
+		if got := Classify(file, nil, config).Bucket; got != Tests {
+			t.Errorf("Classify(%q) bucket = %q, want %q", file, got, Tests)
+		}
+	}
+}
+
 func TestGeneratedMarkersMustAppearInComments(t *testing.T) {
 	content, err := os.ReadFile("classify.go")
 	if err != nil {

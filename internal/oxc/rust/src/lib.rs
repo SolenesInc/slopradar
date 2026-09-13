@@ -285,6 +285,7 @@ struct MetricVisitor<'s> {
     code_lines: &'s [bool],
     stack: Vec<FunctionFrame>,
     hints: Vec<String>,
+    class_names: Vec<String>,
     roots: Vec<FunctionMetric>,
 }
 
@@ -296,6 +297,7 @@ impl<'s> MetricVisitor<'s> {
             code_lines,
             stack: Vec::new(),
             hints: Vec::new(),
+            class_names: Vec::new(),
             roots: Vec::new(),
         }
     }
@@ -362,14 +364,54 @@ impl<'s> MetricVisitor<'s> {
             .collect()
     }
 
+    fn class_name(&self, class: &Class<'_>) -> String {
+        class.id.as_ref().map_or_else(
+            || match self.hints.last() {
+                Some(hint) if hint != "(anonymous)" && !hint.starts_with("cb:") => hint.clone(),
+                _ => "(anonymous class)".to_string(),
+            },
+            |identifier| identifier.name.to_string(),
+        )
+    }
+
+    fn class_member_name(&self, name: String, r#static: bool, kind: Option<&str>) -> String {
+        let mut member = String::new();
+        if r#static {
+            member.push_str("static ");
+        }
+        if let Some(kind) = kind {
+            member.push_str(kind);
+            member.push(' ');
+        }
+        member.push_str(&name);
+        format!(
+            "{}.{}",
+            self.class_names
+                .last()
+                .expect("class members are visited inside a class"),
+            member
+        )
+    }
+
     fn with_hint(&mut self, hint: String, visit: impl FnOnce(&mut Self)) {
         self.hints.push(hint);
         visit(self);
         self.hints.pop();
     }
+
+    fn with_class_name(&mut self, name: String, visit: impl FnOnce(&mut Self)) {
+        self.class_names.push(name);
+        visit(self);
+        self.class_names.pop();
+    }
 }
 
 impl<'a> Visit<'a> for MetricVisitor<'_> {
+    fn visit_class(&mut self, class: &Class<'a>) {
+        let name = self.class_name(class);
+        self.with_class_name(name, |visitor| walk::walk_class(visitor, class));
+    }
+
     fn visit_function(&mut self, function: &Function<'a>, flags: oxc_syntax::scope::ScopeFlags) {
         if function.body.is_none() {
             walk::walk_function(self, function, flags);
@@ -416,17 +458,32 @@ impl<'a> Visit<'a> for MetricVisitor<'_> {
     }
 
     fn visit_property_definition(&mut self, property: &PropertyDefinition<'a>) {
-        let hint = self.name_for(property.key.span());
+        let hint =
+            self.class_member_name(self.name_for(property.key.span()), property.r#static, None);
         self.with_hint(hint, |visitor| {
             walk::walk_property_definition(visitor, property)
         });
     }
 
+    fn visit_accessor_property(&mut self, property: &AccessorProperty<'a>) {
+        let hint = self.class_member_name(
+            self.name_for(property.key.span()),
+            property.r#static,
+            Some("accessor"),
+        );
+        self.with_hint(hint, |visitor| {
+            walk::walk_accessor_property(visitor, property)
+        });
+    }
+
     fn visit_method_definition(&mut self, method: &MethodDefinition<'a>) {
-        let hint = match method.kind {
-            MethodDefinitionKind::Constructor => "constructor".to_string(),
-            _ => self.name_for(method.key.span()),
+        let (name, kind) = match method.kind {
+            MethodDefinitionKind::Constructor => ("constructor".to_string(), None),
+            MethodDefinitionKind::Method => (self.name_for(method.key.span()), None),
+            MethodDefinitionKind::Get => (self.name_for(method.key.span()), Some("get")),
+            MethodDefinitionKind::Set => (self.name_for(method.key.span()), Some("set")),
         };
+        let hint = self.class_member_name(name, method.r#static, kind);
         self.with_hint(hint, |visitor| {
             walk::walk_method_definition(visitor, method)
         });
@@ -541,6 +598,37 @@ mod tests {
         assert_eq!(analysis.functions[1].nested[0].name, "child");
         assert_eq!(analysis.functions[2].name, "cb:factory");
         assert_eq!(analysis.functions[2].nested[0].name, "(anonymous)");
+    }
+
+    #[test]
+    fn qualifies_class_members() {
+        let analysis = analyze_source(
+            "valid.ts",
+            "class A { run() {} static build() {} get value() { return 1 } set value(next: number) {} task = () => () => {}; static boot = () => {}; } const Assigned = class { run() {} }; const Alias = class Internal { run() {} }; factory(class { run() {} }); class Outer { method() { class Inner { run() {} } return () => {}; } }",
+        );
+        let names = analysis
+            .functions
+            .iter()
+            .map(|function| function.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                "A.run",
+                "A.static build",
+                "A.get value",
+                "A.set value",
+                "A.task",
+                "A.static boot",
+                "Assigned.run",
+                "Internal.run",
+                "(anonymous class).run",
+                "Outer.method",
+            ]
+        );
+        assert_eq!(analysis.functions[4].nested[0].name, "(anonymous)");
+        assert_eq!(analysis.functions[9].nested[0].name, "Inner.run");
+        assert_eq!(analysis.functions[9].nested[1].name, "(anonymous)");
     }
 
     #[test]

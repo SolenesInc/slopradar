@@ -90,7 +90,7 @@ func isTest(file string, additions []string) bool {
 	stem := strings.TrimSuffix(base, path.Ext(base))
 	parts := strings.Split(file, "/")
 	for _, part := range parts[:len(parts)-1] {
-		if part == "__tests__" || part == "tests" {
+		if part == "__tests__" && isJavaScriptExtension(ext) || part == "tests" && (ext == ".py" || ext == ".rs") {
 			return true
 		}
 	}
@@ -109,6 +109,15 @@ func isTest(file string, additions []string) bool {
 		}
 	}
 	return matchesAny(file, additions)
+}
+
+func isJavaScriptExtension(extension string) bool {
+	switch extension {
+	case ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs":
+		return true
+	default:
+		return false
+	}
 }
 
 func matchesAny(file string, patterns []string) bool {

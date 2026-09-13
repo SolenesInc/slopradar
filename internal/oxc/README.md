@@ -60,6 +60,12 @@ The returned byte buffer is Rust-owned and must be passed to
 tokens. Rust panics are caught and converted to a nonzero bridge status before
 they can unwind into Go.
 
+Function names retain their source ownership. Class methods and arrow-valued
+properties use the enclosing class name; static members and accessors retain
+their source modifiers. Named class expressions use their internal name,
+assignment-owned anonymous expressions use the assignment or property name,
+and otherwise the owner remains `(anonymous class)`.
+
 The Rust dependency graph and source checksums are pinned in `Cargo.lock`.
 Oxc's upstream notice is preserved in [LICENSE-OXC](LICENSE-OXC). The checked-in
 [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt) maps every locked crate and

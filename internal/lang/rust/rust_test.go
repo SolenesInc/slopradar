@@ -7,6 +7,9 @@ import (
 	"reflect"
 	"testing"
 
+	sitter "github.com/tree-sitter/go-tree-sitter"
+	tree_sitter_rust "github.com/tree-sitter/tree-sitter-rust/bindings/go"
+
 	"github.com/SolenesInc/slopradar/internal/lang"
 	"github.com/SolenesInc/slopradar/internal/model"
 )
@@ -110,7 +113,6 @@ impl Widget {
         };
     }
 }
-
 #[cfg(test)]
 const FACTORY: fn() = || {};
 `)
@@ -132,5 +134,65 @@ const FACTORY: fn() = || {};
 		if (token.Text == "helper" || token.Text == "nested" || token.Text == "FACTORY") && token.Bucket != model.Tests {
 			t.Fatalf("token = %#v, want tests bucket", token)
 		}
+	}
+}
+
+func TestTraitAndExternDeclarationsAreNotFunctions(t *testing.T) {
+	source := []byte(`trait Service {
+    fn required(&self);
+    fn defaulted(&self) {
+        if true {}
+    }
+}
+
+struct Worker;
+
+impl Service for Worker {
+    fn required(&self) {}
+}
+
+unsafe extern "C" {
+    fn ffi_required();
+}
+
+extern "C" fn exported() {}
+`)
+	result, err := Analyze("fixture.rs", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v", result.Warnings)
+	}
+	want := []string{"defaulted", "Worker::required", "exported"}
+	got := make([]string, len(result.Functions))
+	for i, function := range result.Functions {
+		got[i] = function.Name
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("functions = %#v, want %#v", got, want)
+	}
+
+	parser := sitter.NewParser()
+	defer parser.Close()
+	if err := parser.SetLanguage(sitter.NewLanguage(tree_sitter_rust.Language())); err != nil {
+		t.Fatal(err)
+	}
+	tree := parser.Parse(source, nil)
+	if tree == nil {
+		t.Fatal("parser returned no tree")
+	}
+	defer tree.Close()
+	kinds := map[string]int{}
+	collectNamedKinds(tree.RootNode(), kinds)
+	if kinds["function_item"] != 3 || kinds["function_signature_item"] != 2 {
+		t.Fatalf("function node kinds = %#v", kinds)
+	}
+}
+
+func collectNamedKinds(node *sitter.Node, kinds map[string]int) {
+	kinds[node.Kind()]++
+	for i := uint(0); i < node.NamedChildCount(); i++ {
+		collectNamedKinds(node.NamedChild(i), kinds)
 	}
 }
