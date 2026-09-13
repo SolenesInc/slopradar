@@ -13,7 +13,7 @@ values. Earlier receipts remain in Git history at their recorded commits.
 
 Install Git, Go 1.27.1, `jq`, `rsync`, and a C compiler. The recorded binary was
 built with `go1.27.1 darwin/arm64`; its SHA-256 checksum is
-`9bde596fa62b0c55d7bda200b9655ee3dd1fc368ec78b9ca9b472b21f446ed8f`.
+`65a6fa6ac3336794bd3baece328d9f01a18af5ee3fbffa07517842436c0615f8`.
 Network access is required to fetch the pinned inputs.
 
 Start in an empty temporary directory:
@@ -21,7 +21,7 @@ Start in an empty temporary directory:
 ```sh
 baseline_root=$(mktemp -d)
 git clone https://github.com/SolenesInc/slopradar.git "$baseline_root/slopradar"
-git -C "$baseline_root/slopradar" checkout --detach 3c32667706eb1dbdf56add75c3196fb8ee216227
+git -C "$baseline_root/slopradar" checkout --detach e26cba7ee2fa81bce9a3ba479c4338c60c5b45a9
 go -C "$baseline_root/slopradar" build -o "$baseline_root/slopradar-bin" ./cmd/slopradar
 ```
 
