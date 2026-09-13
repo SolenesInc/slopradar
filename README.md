@@ -123,7 +123,8 @@ produce identical output. Directory scans use `directory`. Diff `base` and `head
 and each trend point's `rev` retain commit IDs to identify the compared history.
 
 The cache stores analysis by blob SHA, language, and analyzer version under the
-operating system's user cache directory. `--no-cache` bypasses it. Deleting the
+operating system's user cache directory. `--no-cache` bypasses it. Analyses
+containing non-UTF-8 token bytes are recomputed so JSON caching cannot alter their clone identities. Deleting the
 cache is always safe, and slopradar never writes it into the repository being
 analyzed.
 
@@ -235,8 +236,9 @@ their individual changes.
 
 ## Baselines
 
-These are source-bucket erosion measurements made with the shipped CLI at
-commit `3c32667`, using Go `1.27.1` and `--no-cache`. Each row is restricted to
+These are source-bucket erosion measurements made with the CLI producer recorded
+in the [baseline receipt](docs/baselines-v0.1.0.json), using Go `1.27.1` and
+`--no-cache`. Each row is restricted to
 the stated language and path because erosion is language-bound. The adjacent
 prototype value is the expectation recorded before the production parsers were
 integrated.

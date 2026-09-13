@@ -161,12 +161,26 @@ func generated(file string, content []byte) bool {
 			return false
 		}
 		lower := bytes.ToLower(comment)
-		if bytes.Contains(comment, []byte("Code generated ")) && bytes.Contains(comment, []byte(" DO NOT EDIT.")) ||
+		directive := bytes.Contains(comment, []byte("Code generated ")) && bytes.Contains(comment, []byte(" DO NOT EDIT."))
+		if extension == ".go" {
+			directive = goGeneratedDirective(comment)
+		}
+		if directive ||
 			bytes.Contains(lower, []byte("@generated")) || bytes.Contains(lower, []byte("linguist-generated")) {
 			return true
 		}
 		content = rest
 	}
+}
+
+func goGeneratedDirective(comment []byte) bool {
+	for line := range bytes.SplitSeq(comment, []byte{'\n'}) {
+		line = bytes.TrimSuffix(line, []byte{'\r'})
+		if rest, ok := bytes.CutPrefix(line, []byte("// Code generated ")); ok && bytes.HasSuffix(rest, []byte(" DO NOT EDIT.")) {
+			return true
+		}
+	}
+	return false
 }
 
 func leadingComment(content []byte, extension string) ([]byte, []byte, bool) {

@@ -6,12 +6,13 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"unicode/utf8"
 
 	"github.com/SolenesInc/slopradar/internal/lang"
 	"github.com/SolenesInc/slopradar/internal/model"
 )
 
-const AnalyzerVersion = "21"
+const AnalyzerVersion = "22"
 
 type Store struct {
 	root    string
@@ -49,6 +50,11 @@ func (s *Store) Get(blobSHA, dialect, file string) (lang.Result, bool) {
 func (s *Store) Put(blobSHA, dialect string, result lang.Result) {
 	if s == nil || blobSHA == "" || len(result.Warnings) != 0 {
 		return
+	}
+	for _, token := range result.Tokens {
+		if !utf8.ValidString(token.Text) {
+			return
+		}
 	}
 	normalized := result
 	normalized.Functions = cloneFunctions(result.Functions)

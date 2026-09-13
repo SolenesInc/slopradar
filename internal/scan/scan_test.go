@@ -365,6 +365,41 @@ func TestRevisionCacheRebindsPathsAndClassifiesAfterLoading(t *testing.T) {
 	}
 }
 
+func TestRevisionCachePreservesLatin1PythonCloneTokens(t *testing.T) {
+	dir := t.TempDir()
+	gitForScan(t, dir, "init", "-b", "main")
+	gitForScan(t, dir, "config", "user.name", "Slopradar Test")
+	gitForScan(t, dir, "config", "user.email", "test@slopradar.invalid")
+	source := "# coding: latin-1\ndef run():\n"
+	for i := range clones.JscpdDefaultMinimumTokens {
+		source += fmt.Sprintf("    value%d = '\xe9'\n", i)
+	}
+	for _, file := range []string{"a.py", "b.py"} {
+		writeScanFile(t, dir, file, source)
+	}
+	gitForScan(t, dir, "add", ".")
+	gitForScan(t, dir, "commit", "-m", "Latin-1 source")
+	store := analysiscache.New(t.TempDir(), analysiscache.AnalyzerVersion)
+	cold, err := RevisionWithCache(context.Background(), dir, "HEAD", store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cold.Warnings) != 0 || len(cold.Clones) != 1 {
+		t.Fatalf("warnings = %v, clones = %+v", cold.Warnings, cold.Clones)
+	}
+	warm, err := RevisionWithCache(context.Background(), dir, "HEAD", store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uncached, err := Revision(context.Background(), dir, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(cold, warm) || !reflect.DeepEqual(cold, uncached) {
+		t.Fatalf("clone tokens changed: cold %+v, warm %+v, uncached %+v", cold.Clones, warm.Clones, uncached.Clones)
+	}
+}
+
 func TestRevisionCacheSeparatesTypeScriptDialects(t *testing.T) {
 	dir := t.TempDir()
 	gitForScan(t, dir, "init", "-b", "main")
