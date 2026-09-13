@@ -15,6 +15,15 @@ detection compares exact lexical tokens after removing comments, with the
 50-token and 5-source-line minimums used for the project's pinned prototype
 receipts.
 
+Python tokens also carry parsed suite boundaries. Every tree-sitter `block`
+with retained tokens contributes an unambiguous NUL-prefixed open/close pair,
+anchored to the first and last retained physical token lines. A block containing
+only removed comments or docstrings contributes neither marker. Tabs and spaces
+that parse to the same nesting therefore compare equally, inline suites retain
+the same block shape, and indentation inside a continued expression contributes
+no suite boundary. String-content whitespace remains exact. This analysis does
+not invoke a Python runtime.
+
 ## Install
 
 slopradar supports Linux and macOS on arm64 and amd64. Installation needs Go

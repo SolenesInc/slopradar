@@ -11,14 +11,24 @@ import (
 
 func Analyze(file string, source []byte) (lang.Result, error) {
 	rules := lang.Rules{
-		Language:   sitter.NewLanguage(tree_sitter_python.Language()),
-		Function:   isFunction,
-		Name:       name,
-		Decision:   decision,
-		Comment:    isComment,
-		ParseError: "invalid Python syntax",
+		Language:       sitter.NewLanguage(tree_sitter_python.Language()),
+		Function:       isFunction,
+		Name:           name,
+		Decision:       decision,
+		Comment:        isComment,
+		TokenBoundary:  isSuite,
+		KeepWhitespace: isStringContent,
+		ParseError:     "invalid Python syntax",
 	}
 	return lang.Analyze(file, source, rules)
+}
+
+func isSuite(node *sitter.Node) bool {
+	return node.Kind() == "block"
+}
+
+func isStringContent(node *sitter.Node) bool {
+	return node.Kind() == "string_content"
 }
 
 func isFunction(node *sitter.Node) bool {

@@ -32,13 +32,15 @@ type Result struct {
 }
 
 type Rules struct {
-	Language   *sitter.Language
-	Function   func(*sitter.Node) bool
-	Name       func(*sitter.Node, []byte) string
-	Decision   func(*sitter.Node, []byte) int
-	Comment    func(*sitter.Node, []byte) bool
-	TestScope  func(*sitter.Node, []byte) bool
-	ParseError string
+	Language       *sitter.Language
+	Function       func(*sitter.Node) bool
+	Name           func(*sitter.Node, []byte) string
+	Decision       func(*sitter.Node, []byte) int
+	Comment        func(*sitter.Node, []byte) bool
+	TestScope      func(*sitter.Node, []byte) bool
+	TokenBoundary  func(*sitter.Node) bool
+	KeepWhitespace func(*sitter.Node) bool
+	ParseError     string
 }
 
 type candidate struct {
@@ -85,13 +87,26 @@ func collectLexical(node *sitter.Node, source []byte, rules Rules, bucket model.
 	}
 	if node.ChildCount() == 0 {
 		text := node.Utf8Text(source)
-		if len(bytes.TrimSpace([]byte(text))) != 0 {
+		if len(bytes.TrimSpace([]byte(text))) != 0 || rules.KeepWhitespace != nil && rules.KeepWhitespace(node) {
 			result.Tokens = append(result.Tokens, Token{Text: text, Line: int(node.StartPosition().Row) + 1, Bucket: bucket})
 		}
 		return
 	}
+	boundary := rules.TokenBoundary != nil && rules.TokenBoundary(node)
+	boundaryIndex := len(result.Tokens)
+	if boundary {
+		result.Tokens = append(result.Tokens, Token{Text: "\x00" + node.Kind() + ":open", Bucket: bucket})
+	}
 	for i := uint(0); i < node.ChildCount(); i++ {
 		collectLexical(node.Child(i), source, rules, bucket, result)
+	}
+	if boundary {
+		if len(result.Tokens) == boundaryIndex+1 {
+			result.Tokens = result.Tokens[:boundaryIndex]
+			return
+		}
+		result.Tokens[boundaryIndex].Line = result.Tokens[boundaryIndex+1].Line
+		result.Tokens = append(result.Tokens, Token{Text: "\x00" + node.Kind() + ":close", Line: result.Tokens[len(result.Tokens)-1].Line, Bucket: bucket})
 	}
 }
 
