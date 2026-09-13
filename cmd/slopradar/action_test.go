@@ -29,6 +29,37 @@ func TestActionSourcePathIsCanonical(t *testing.T) {
 	}
 }
 
+func TestActionInstallBuildsResolvedSourceWithoutResolvingActionRef(t *testing.T) {
+	repository, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository, err = filepath.EvalSymlinks(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	action, err := os.ReadFile(filepath.Join(repository, "action.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(action), `bash "$ACTION_PATH/scripts/action-install.sh" "$ACTION_PATH"`) {
+		t.Fatal("action does not install from its resolved source path")
+	}
+	if strings.Contains(string(action), "github.com/SolenesInc/slopradar/cmd/slopradar@") {
+		t.Fatal("action installs the binary from a separate remote source")
+	}
+	installDir := t.TempDir()
+	script := filepath.Join(repository, "scripts", "action-install.sh")
+	command := exec.Command("bash", script, repository, installDir)
+	command.Env = append(os.Environ(), "ACTION_REF=not-a-resolvable-ref", "GOPROXY=off", "GOSUMDB=off")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("install resolved action source: %v\n%s", err, output)
+	}
+	if _, err := os.Stat(filepath.Join(installDir, "slopradar")); err != nil {
+		t.Fatalf("installed binary: %v", err)
+	}
+}
+
 func TestActionReportFetchesBaseAndWritesMarkdown(t *testing.T) {
 	root := t.TempDir()
 	remote := filepath.Join(root, "remote.git")

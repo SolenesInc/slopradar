@@ -55,10 +55,15 @@ jobs:
           comment: "true"
 ```
 
+The action builds its binary from the same checkout that supplied its scripts,
+so a moved ref or fork cannot mix code from two sources. The standalone
+versioned `go install` command above remains available for CLI installation.
+
 The action always writes the report to the job summary. It creates one PR
-comment and updates that same comment on later runs. On a fork pull request
-whose token cannot write comments, it keeps the summary and says in the job log
-that it skipped the comment. The numbers never fail the job.
+comment and updates that same comment on later runs. On a fork pull request, or
+a [Dependabot pull request whose token is read-only](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-on-actions#restrictions-when-dependabot-triggers-events),
+it keeps the summary and says in the job log that it skipped the comment. Other
+API failures stay visible. The numbers never fail the job.
 
 Reports within GitHub's
 [65,536 UTF-16-code-unit comment capacity](https://github.com/github/branch-deploy/blob/826fd07b4eae2e0a6b750c2a19d68b6c8d509cc0/__tests__/functions/truncate-comment-body.test.ts)

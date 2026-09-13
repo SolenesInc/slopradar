@@ -35,16 +35,9 @@ runs:
       shell: bash
       env:
         ACTION_PATH: ${{ steps.action_source.outputs.path }}
-        ACTION_REF: ${{ github.action_ref }}
       run: |
         install_dir="$RUNNER_TEMP/slopradar-bin"
-        mkdir -p "$install_dir"
-        export GOBIN="$install_dir"
-        if [[ -n "$ACTION_REF" ]]; then
-          go install "github.com/SolenesInc/slopradar/cmd/slopradar@${ACTION_REF}"
-        else
-          (cd "$ACTION_PATH" && go install ./cmd/slopradar)
-        fi
+        bash "$ACTION_PATH/scripts/action-install.sh" "$ACTION_PATH" "$install_dir"
         echo "$install_dir" >> "$GITHUB_PATH"
 
     - name: Build slop report

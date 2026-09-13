@@ -39,10 +39,10 @@ function issueAPI() {
   }
 }
 
-function pullRequestContext(headRepository = "SolenesInc/slopradar") {
+function pullRequestContext(headRepository = "SolenesInc/slopradar", author = "victor") {
   return {
     repo: {owner: "SolenesInc", repo: "slopradar"},
-    payload: {pull_request: {number: 1, head: {repo: {full_name: headRepository}}}},
+    payload: {pull_request: {number: 1, head: {repo: {full_name: headRepository}}, user: {login: author}}},
   }
 }
 
@@ -92,6 +92,28 @@ test("keeps the report but skips a fork comment", async (t) => {
 
   assert.equal(api.comments.length, 0)
   assert.match(messages[0], /GITHUB_TOKEN is read-only for fork pull requests/)
+})
+
+test("keeps the report but skips a same-repository Dependabot comment", async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "slopradar-comment-"))
+  t.after(() => fs.rmSync(directory, {recursive: true}))
+  const reportPath = path.join(directory, "report.md")
+  const report = "<!-- slopradar -->\nreport\n"
+  fs.writeFileSync(reportPath, report)
+  const api = issueAPI()
+  const messages = []
+
+  await upsertComment({
+    github: api.github,
+    context: pullRequestContext("SolenesInc/slopradar", "dependabot[bot]"),
+    core: {info: (message) => messages.push(message)},
+    reportPath,
+    commentEnabled: "true",
+  })
+
+  assert.equal(fs.readFileSync(reportPath, "utf8"), report)
+  assert.equal(api.comments.length, 0)
+  assert.match(messages[0], /Dependabot pull request workflows a read-only GITHUB_TOKEN/)
 })
 
 test("makes a comment permission failure actionable", async (t) => {

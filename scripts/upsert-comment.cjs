@@ -32,6 +32,12 @@ module.exports = async function upsertComment({
     )
     return
   }
+  if (pullRequest.user?.login === "dependabot[bot]") {
+    core.info(
+      "slopradar comment skipped: GitHub gives Dependabot pull request workflows a read-only GITHUB_TOKEN",
+    )
+    return
+  }
 
   const report = fs.readFileSync(reportPath, "utf8")
   const bounded = commentForReport(report, runUrl)
