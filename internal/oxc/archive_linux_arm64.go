@@ -4,4 +4,4 @@
 
 package oxc
 
-const nativeArchiveSHA256 = "bc435cf12819a55bf257f3a7b7b6392d0ee188eefd5f662cefbbc63c30770d4a"
+const nativeArchiveSHA256 = "94c965df8dbbdb733ce69713cbe94619b66d5a6226285663f42c3856a5fe9178"
