@@ -61,7 +61,9 @@ The returned byte buffer is Rust-owned and must be passed to
 tokens. Rust panics are caught and converted to a nonzero bridge status before
 they can unwind into Go.
 
-Function names retain their source ownership. Class methods and arrow-valued
+Function names retain their source ownership. TypeScript namespace declarations
+qualify their functions, classes and object members, including nested and dotted
+namespaces, while function-local names remain relative to the enclosing function. Class methods and arrow-valued
 properties use the enclosing class name; static members and accessors retain
 their source modifiers. Named class expressions use their internal name,
 assignment-owned anonymous expressions use the assignment or property name,

@@ -144,6 +144,18 @@ that prove an item requires a test build, such as `all(test, unix)` and
 unknown; their target or feature values are never guessed. These combinations
 follow the [Rust conditional compilation rules](https://doc.rust-lang.org/reference/conditional-compilation.html).
 
+Rust test scope follows external `mod` declarations through `name.rs`,
+`name/mod.rs`, nested inline modules, and literal `#[path]` attributes. A file
+also reachable from production keeps its source bucket. Scope is recomputed
+for each snapshot, including when an unchanged child comes from the cache;
+parent-only scope changes appear in the diff. File-level `#![cfg(test)]` also
+marks the file and its child modules as tests. Module resolution uses only
+analyzed files, without running Cargo or expanding macros. Conditional or
+unresolvable module paths produce warnings; scans retain conservative source
+classification and diff/trend reject incomplete analysis. Explicit `test_globs`
+can classify standalone test files.
+
+
 Configuration globs use `/` as the path separator on the supported Unix
 platforms. A backslash escapes the next glob character; it is not a separator.
 
@@ -183,6 +195,10 @@ Rust method names include their owner: `Worker::run` for an inherent method,
 `Service::run` for a trait default, and `<Worker as Service>::run` for a trait
 implementation. Nested test functions retain their test bucket in drill-down
 rows; totals still include only top-level functions.
+
+TypeScript namespaces retain their complete owner paths, such as `A.Inner.run`,
+including class and object members. Nested function names remain relative to
+their enclosing function.
 
 Inline Rust modules and nested Python classes retain their complete owner paths,
 such as `alpha::inner::run` and `Outer.Inner.run`. Function boundaries stop owner

@@ -89,9 +89,6 @@ func sortFunctionDeltas(deltas []model.FunctionDelta) {
 
 func analysisTouchedPaths(base, head model.Snapshot, touched []string) []string {
 	result := append([]string(nil), touched...)
-	if !containsPath(result, model.ConfigFile) {
-		return result
-	}
 	basePaths := analysisPathBuckets(base.AnalysisPaths)
 	headPaths := analysisPathBuckets(head.AnalysisPaths)
 	seen := make(map[string]struct{}, len(result)+len(basePaths)+len(headPaths))
@@ -118,15 +115,6 @@ func analysisTouchedPaths(base, head model.Snapshot, touched []string) []string 
 		}
 	}
 	return result
-}
-
-func containsPath(paths []string, target string) bool {
-	for _, item := range paths {
-		if item == target {
-			return true
-		}
-	}
-	return false
 }
 
 func analysisPathBuckets(paths []model.AnalysisPath) map[string]model.Bucket {

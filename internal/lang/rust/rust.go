@@ -12,6 +12,7 @@ import (
 
 func Analyze(file string, source []byte) (lang.Result, error) {
 	rules := lang.Rules{
+		Modules:  modules,
 		Language: sitter.NewLanguage(tree_sitter_rust.Language()),
 		Function: isFunction,
 		Name:     name,
@@ -100,6 +101,14 @@ func localName(node *sitter.Node, source []byte) string {
 }
 
 func isTestScope(node *sitter.Node, source []byte) bool {
+	if node.Kind() == "source_file" || node.Kind() == "declaration_list" {
+		for i := uint(0); i < node.NamedChildCount(); i++ {
+			child := node.NamedChild(i)
+			if child.Kind() == "inner_attribute_item" && testAttribute(child, source) {
+				return true
+			}
+		}
+	}
 	if node.Kind() == "attribute_item" {
 		return testAttribute(node, source)
 	}
@@ -119,7 +128,7 @@ func isTestScope(node *sitter.Node, source []byte) bool {
 }
 
 func testAttribute(item *sitter.Node, source []byte) bool {
-	if item == nil || item.Kind() != "attribute_item" || item.NamedChildCount() != 1 {
+	if item == nil || (item.Kind() != "attribute_item" && item.Kind() != "inner_attribute_item") || item.NamedChildCount() != 1 {
 		return false
 	}
 	attribute := item.NamedChild(0)

@@ -22,7 +22,19 @@ type Token struct {
 	Bucket model.Bucket `json:"bucket"`
 }
 
+type Module struct {
+	Name           string
+	Path           *string
+	AlternatePaths []string
+	TestOnly       bool
+	Inline         bool
+	Uncertain      bool
+	Children       []Module
+}
+
 type Result struct {
+	Modules         []Module
+	TestOnly        bool
 	Functions       []model.Function
 	FunctionBuckets []model.Bucket
 	Comments        []Span
@@ -32,6 +44,7 @@ type Result struct {
 }
 
 type Rules struct {
+	Modules        func(*sitter.Node, []byte) []Module
 	Language       *sitter.Language
 	Function       func(*sitter.Node) bool
 	Name           func(*sitter.Node, []byte) string
@@ -66,6 +79,10 @@ func Analyze(file string, source []byte, rules Rules) (Result, error) {
 	if root.HasError() {
 		result.Warnings = append(result.Warnings, fmt.Sprintf("parse %s: %s; analyzed recoverable syntax", file, rules.ParseError))
 	}
+	if rules.Modules != nil {
+		result.Modules = rules.Modules(root, source)
+	}
+	result.TestOnly = rules.TestScope != nil && rules.TestScope(root, source)
 	collectLexical(root, source, rules, model.Source, &result)
 	var roots []*candidate
 	collectFunctions(root, source, rules, model.Source, nil, &roots)

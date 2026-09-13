@@ -329,6 +329,7 @@ struct MetricVisitor<'s> {
     stack: Vec<FunctionFrame>,
     hints: Vec<String>,
     class_names: Vec<String>,
+    namespaces: Vec<String>,
     roots: Vec<FunctionMetric>,
 }
 
@@ -341,11 +342,17 @@ impl<'s> MetricVisitor<'s> {
             stack: Vec::new(),
             hints: Vec::new(),
             class_names: Vec::new(),
+            namespaces: Vec::new(),
             roots: Vec::new(),
         }
     }
 
     fn start_function(&mut self, name: String, span: Span) {
+        let name = if self.stack.is_empty() && !self.namespaces.is_empty() {
+            format!("{}.{}", self.namespaces.join("."), name)
+        } else {
+            name
+        };
         self.stack.push(FunctionFrame {
             name,
             span,
@@ -464,6 +471,12 @@ impl<'s> MetricVisitor<'s> {
 }
 
 impl<'a> Visit<'a> for MetricVisitor<'_> {
+    fn visit_ts_namespace_declaration(&mut self, namespace: &TSNamespaceDeclaration<'a>) {
+        self.namespaces.push(namespace.id.name.to_string());
+        walk::walk_ts_namespace_declaration(self, namespace);
+        self.namespaces.pop();
+    }
+
     fn visit_class(&mut self, class: &Class<'a>) {
         let name = self.class_name(class);
         self.with_class_name(name, |visitor| walk::walk_class(visitor, class));
@@ -788,4 +801,20 @@ mod tests {
         assert_eq!(buffer.len, 0);
         assert_eq!(buffer.capacity, 0);
     }
+}
+
+#[cfg(test)]
+#[test]
+fn namespace_owners_preserve_local_function_boundaries() {
+    let analysis = analyze_source(
+        "namespaces.ts",
+        "namespace A.B { export function run() { function local() {} } export const arrow = () => 1; export class C { run() {} } } namespace D { export function run() {} } function outside() {}",
+    );
+    assert_eq!(analysis.status, Status::Ok);
+    let names: Vec<_> = analysis.functions.iter().map(|f| f.name.as_str()).collect();
+    assert_eq!(
+        names,
+        ["A.B.run", "A.B.arrow", "A.B.C.run", "D.run", "outside"]
+    );
+    assert_eq!(analysis.functions[0].nested[0].name, "local");
 }

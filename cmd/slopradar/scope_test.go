@@ -82,3 +82,37 @@ func TestScanGeneratedMarkersRespectJavaScriptTerminators(t *testing.T) {
 		}
 	}
 }
+
+func TestDiffReportsSwappedNamespaceMetrics(t *testing.T) {
+	dir := t.TempDir()
+	gitCommand(t, dir, "init", "-b", "main")
+	gitCommand(t, dir, "config", "user.name", "Slopradar Test")
+	gitCommand(t, dir, "config", "user.email", "test@slopradar.invalid")
+	writeFile(t, dir, "owners.ts", "namespace A { export function run(x: boolean) { if (x) {} } }\nnamespace B { export function run(x: boolean) {} }\n")
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "before")
+	writeFile(t, dir, "owners.ts", "namespace A { export function run(x: boolean) {} }\nnamespace B { export function run(x: boolean) { if (x) {} } }\n")
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "after")
+	t.Chdir(dir)
+	var output bytes.Buffer
+	if err := run(context.Background(), []string{"diff", "--base", "HEAD^", "--head", "HEAD", "--format=json", "--no-cache"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	var got model.Diff
+	if err := json.Unmarshal(output.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Functions) != 2 {
+		t.Fatalf("deltas = %#v", got.Functions)
+	}
+	for i, f := range got.Functions {
+		name, before, after := "A.run", 2, 1
+		if i == 1 {
+			name, before, after = "B.run", 1, 2
+		}
+		if f.Name != name || f.Before == nil || f.After == nil || f.Before.CC != before || f.After.CC != after || f.Before.Line != i+1 || f.After.Line != i+1 {
+			t.Fatalf("delta = %#v", f)
+		}
+	}
+}

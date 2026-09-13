@@ -380,3 +380,33 @@ func TestClassificationCoversTypeScriptDefaults(t *testing.T) {
 		t.Fatal("generated TypeScript was not classified")
 	}
 }
+
+func TestAnalyzeNamespaceOwners(t *testing.T) {
+	result, err := Analyze("namespaces.ts", []byte(`
+namespace A {
+ export function run() { function local() {} }
+ export const arrow = () => 1;
+ export const obj = { run() {} };
+ export class Worker { run() {} }
+}
+namespace B { export function run() {} }
+namespace A.Inner { export function run() {} }
+namespace A { export function again() {} }
+module Legacy { export function run() {} }
+function outside() {}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, f := range result.Functions {
+		names = append(names, f.Name)
+	}
+	want := []string{"A.run", "A.arrow", "A.obj.run", "A.Worker.run", "B.run", "A.Inner.run", "A.again", "Legacy.run", "outside"}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("names = %v, want %v", names, want)
+	}
+	if got := result.Functions[0].Nested; len(got) != 1 || got[0].Name != "local" {
+		t.Fatalf("nested = %#v", got)
+	}
+}

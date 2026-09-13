@@ -21,6 +21,13 @@ import (
 	"github.com/SolenesInc/slopradar/internal/model"
 )
 
+type analyzedFile struct {
+	blob     gitread.Blob
+	analysis analyzer
+	result   lang.Result
+	bucket   model.Bucket
+}
+
 type analyzer struct {
 	language string
 	dialect  string
@@ -121,6 +128,7 @@ func blobsWithConfig(rev string, blobs []gitread.Blob, config model.Config, skip
 	}
 	functions := map[model.Bucket][]model.Function{model.Source: {}, model.Tests: {}}
 	cloneFiles := []clones.File{}
+	var files []analyzedFile
 	for _, blob := range blobs {
 		classification := model.Classify(blob.Path, blob.Content, config)
 		if classification.Excluded || classification.Generated {
@@ -135,11 +143,6 @@ func blobsWithConfig(rev string, blobs []gitread.Blob, config model.Config, skip
 		if !ok {
 			continue
 		}
-		gitLineCoordinates := true
-		if analyze.language == "typescript" {
-			gitLineCoordinates = lang.CountLineTerminators(blob.Content, false) == lang.CountLineTerminators(blob.Content, true)
-		}
-		snapshot.AnalysisPaths = append(snapshot.AnalysisPaths, model.AnalysisPath{File: blob.Path, Bucket: classification.Bucket, GitLineCoordinates: gitLineCoordinates})
 		result, found := cache.Get(blob.OID, analyze.dialect, blob.Path)
 		if !found {
 			analyzed, err := analyze.run(blob.Path, blob.Content)
@@ -149,12 +152,19 @@ func blobsWithConfig(rev string, blobs []gitread.Blob, config model.Config, skip
 			result = analyzed
 			cache.Put(blob.OID, analyze.dialect, result)
 		}
+		files = append(files, analyzedFile{blob: blob, analysis: analyze, result: result, bucket: classification.Bucket})
+	}
+	snapshot.Warnings = append(snapshot.Warnings, classifyRustModules(files)...)
+	for _, file := range files {
+		blob, analyze, result, bucket := file.blob, file.analysis, file.result, file.bucket
+		gitLineCoordinates := analyze.language != "typescript" || lang.CountLineTerminators(blob.Content, false) == lang.CountLineTerminators(blob.Content, true)
+		snapshot.AnalysisPaths = append(snapshot.AnalysisPaths, model.AnalysisPath{File: blob.Path, Bucket: bucket, GitLineCoordinates: gitLineCoordinates})
 		snapshot.Warnings = append(snapshot.Warnings, result.Warnings...)
 		sourceLines := lang.SourceLines(blob.Content, result.Comments, result.TestSpans)
 		if analyze.language == "typescript" {
 			sourceLines = lang.JavaScriptSourceLines(blob.Content, result.Comments, result.TestSpans)
 		}
-		if classification.Bucket == model.Tests {
+		if bucket == model.Tests {
 			sourceLines[model.Tests] = append(sourceLines[model.Tests], sourceLines[model.Source]...)
 			sort.Ints(sourceLines[model.Tests])
 			sourceLines[model.Source] = nil
@@ -169,12 +179,12 @@ func blobsWithConfig(rev string, blobs []gitread.Blob, config model.Config, skip
 		}
 		cloneFiles = append(cloneFiles, clones.File{Path: blob.Path, Language: analyze.language, Tokens: result.Tokens, SourceLines: sourceLines})
 		for i, function := range result.Functions {
-			bucket := classification.Bucket
-			if bucket == model.Source && i < len(result.FunctionBuckets) {
-				bucket = result.FunctionBuckets[i]
+			functionBucket := bucket
+			if functionBucket == model.Source && i < len(result.FunctionBuckets) {
+				functionBucket = result.FunctionBuckets[i]
 			}
-			functions[bucket] = append(functions[bucket], function)
-			snapshot.Functions = append(snapshot.Functions, withBucket(function, bucket))
+			functions[functionBucket] = append(functions[functionBucket], function)
+			snapshot.Functions = append(snapshot.Functions, withBucket(function, functionBucket))
 		}
 	}
 	cloneResult := clones.Detect(cloneFiles)
