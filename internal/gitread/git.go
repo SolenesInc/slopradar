@@ -237,7 +237,7 @@ func (r *Repository) ChangedFiles(ctx context.Context, base, head string) ([]str
 }
 
 func (r *Repository) LineChanges(ctx context.Context, base, head string) ([]LineChange, error) {
-	out, err := gitOutput(ctx, r.dir, "diff", "--no-renames", "--unified=0", "--no-color", "--no-ext-diff", "--no-textconv", base, head, "--")
+	out, err := gitOutput(ctx, r.dir, "diff", "--no-renames", "--diff-algorithm=myers", "--no-indent-heuristic", "--unified=0", "--no-color", "--no-ext-diff", "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/", base, head, "--")
 	if err != nil {
 		return nil, err
 	}

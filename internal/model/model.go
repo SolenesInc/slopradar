@@ -42,8 +42,9 @@ type CloneCoverage struct {
 }
 
 type AnalysisPath struct {
-	File   string
-	Bucket Bucket
+	File               string
+	Bucket             Bucket
+	GitLineCoordinates bool
 }
 
 type Totals struct {

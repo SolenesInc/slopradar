@@ -253,6 +253,8 @@ func TestLineChangesReadsGitHunks(t *testing.T) {
 	git(t, dir, "init", "-b", "main")
 	git(t, dir, "config", "user.name", "Slopradar Test")
 	git(t, dir, "config", "user.email", "test@slopradar.invalid")
+	git(t, dir, "config", "diff.algorithm", "patience")
+	git(t, dir, "config", "diff.indentHeuristic", "true")
 	write(t, dir, "lines.go", "first\nremoved one\nremoved two\nstable\n")
 	git(t, dir, "add", ".")
 	git(t, dir, "commit", "-m", "base")
@@ -287,6 +289,27 @@ func TestParseLineChangesPreservesQuotedPathsAndIgnoresSourceMarkers(t *testing.
 	want := []LineChange{{File: "line\nfile.go", BeforeStart: 3, BeforeCount: 1, AfterStart: 3, AfterCount: 0}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("line changes = %#v, want %#v", got, want)
+	}
+}
+
+func BenchmarkLineChanges(b *testing.B) {
+	repositoryPath := os.Getenv("SLOPRADAR_BENCH_REPOSITORY")
+	base := os.Getenv("SLOPRADAR_BENCH_BASE")
+	head := os.Getenv("SLOPRADAR_BENCH_HEAD")
+	if repositoryPath == "" || base == "" || head == "" {
+		b.Skip("set SLOPRADAR_BENCH_REPOSITORY, SLOPRADAR_BENCH_BASE and SLOPRADAR_BENCH_HEAD")
+	}
+	repository, err := Open(repositoryPath)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for range b.N {
+		changes, err := repository.LineChanges(context.Background(), base, head)
+		if err != nil {
+			b.Fatal(err)
+		}
+		b.ReportMetric(float64(len(changes)), "hunks")
 	}
 }
 

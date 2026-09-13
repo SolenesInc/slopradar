@@ -450,11 +450,12 @@ mod tests {
 
 func TestJavaScriptLineTerminatorsPreserveCloneCoverage(t *testing.T) {
 	terminators := []struct {
-		name string
-		text string
+		name               string
+		text               string
+		gitLineCoordinates bool
 	}{
-		{name: "lf", text: "\n"},
-		{name: "crlf", text: "\r\n"},
+		{name: "lf", text: "\n", gitLineCoordinates: true},
+		{name: "crlf", text: "\r\n", gitLineCoordinates: true},
 		{name: "cr", text: "\r"},
 		{name: "line separator", text: "\u2028"},
 		{name: "paragraph separator", text: "\u2029"},
@@ -481,6 +482,11 @@ func TestJavaScriptLineTerminatorsPreserveCloneCoverage(t *testing.T) {
 			totals := snapshot.Buckets[model.Source]
 			if totals.SourceLines != 14 || totals.CloneLines != 14 || len(snapshot.Clones) != 1 {
 				t.Fatalf("snapshot = %#v", snapshot)
+			}
+			for _, analysisPath := range snapshot.AnalysisPaths {
+				if analysisPath.GitLineCoordinates != terminator.gitLineCoordinates {
+					t.Fatalf("analysis path = %#v, want Git compatibility %t", analysisPath, terminator.gitLineCoordinates)
+				}
 			}
 		})
 	}

@@ -372,6 +372,60 @@ func TestDiffRemovesDeletedRepeatedCloneOccurrence(t *testing.T) {
 	}
 }
 
+func TestDiffRemovesLastRepeatedCloneOccurrence(t *testing.T) {
+	dir := t.TempDir()
+	gitCommand(t, dir, "init", "-b", "main")
+	gitCommand(t, dir, "config", "user.name", "Slopradar Test")
+	gitCommand(t, dir, "config", "user.email", "test@slopradar.invalid")
+	writeFile(t, dir, "copies.go", repeatedCloneCopies(true))
+	writeFile(t, dir, "peer.go", repeatedClonePeer())
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "base")
+	base := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+
+	writeFile(t, dir, "copies.go", "package fixture\n\n"+repeatedCloneFunction("first"))
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "remove last copy")
+	head := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+
+	baseSnapshot, err := scan.Revision(context.Background(), dir, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	headSnapshot, err := scan.Revision(context.Background(), dir, head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var surviving model.ClonePair
+	for _, pair := range headSnapshot.Clones {
+		if pair.A.File == "copies.go" && pair.B.File == "peer.go" {
+			surviving = pair
+			break
+		}
+	}
+	before := []model.ClonePair{}
+	for _, pair := range baseSnapshot.Clones {
+		if pair.ID == surviving.ID {
+			before = append(before, pair)
+		}
+	}
+	if surviving.ID == "" || len(before) != 2 {
+		t.Fatalf("fixture ranges: before = %#v, surviving = %#v", before, surviving)
+	}
+
+	t.Chdir(dir)
+	result := commandDiff(t, base, head)
+	removed := []model.ClonePair{}
+	for _, pair := range result.ClonesRemoved {
+		if pair.ID == surviving.ID {
+			removed = append(removed, pair)
+		}
+	}
+	if len(removed) != 1 || removed[0].A.Start != before[1].A.Start {
+		t.Fatalf("removed repeated occurrence = %#v, want deleted range %#v", removed, before[1])
+	}
+}
+
 func TestDiffAddsInsertedRepeatedCloneOccurrence(t *testing.T) {
 	dir := t.TempDir()
 	gitCommand(t, dir, "init", "-b", "main")

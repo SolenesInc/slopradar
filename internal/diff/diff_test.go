@@ -189,7 +189,7 @@ func TestLineMappingsFollowUnchangedLinesAcrossHunks(t *testing.T) {
 	mappings := newLineMappings([]gitread.LineChange{
 		{File: "source.go", BeforeStart: 1, BeforeCount: 2, AfterStart: 0, AfterCount: 0},
 		{File: "source.go", BeforeStart: 4, BeforeCount: 0, AfterStart: 2, AfterCount: 2},
-	})
+	}, map[string]bool{"source.go": true, "unchanged.go": true})
 	cases := []struct {
 		before int
 		after  int
@@ -209,6 +209,9 @@ func TestLineMappingsFollowUnchangedLinesAcrossHunks(t *testing.T) {
 	}
 	if after, mapped := mappings.line("unchanged.go", 7); after != 7 || !mapped {
 		t.Fatalf("unchanged line = (%d, %t)", after, mapped)
+	}
+	if after, mapped := mappings.line("unicode.js", 7); after != 0 || mapped {
+		t.Fatalf("incompatible JavaScript line = (%d, %t)", after, mapped)
 	}
 }
 
@@ -233,7 +236,7 @@ func BenchmarkCloneChangesRepeatedIdentity(b *testing.B) {
 			start := before[i+1].A.Start - 5
 			after[i] = clone("repeated", "copies.go", start, start+4, "peer.go", 1, 5)
 		}
-		mappings := newLineMappings([]gitread.LineChange{{File: "copies.go", BeforeStart: 1, BeforeCount: 5, AfterStart: 0, AfterCount: 0}})
+		mappings := newLineMappings([]gitread.LineChange{{File: "copies.go", BeforeStart: 1, BeforeCount: 5, AfterStart: 0, AfterCount: 0}}, map[string]bool{"copies.go": true, "peer.go": true})
 		touched := map[string]struct{}{"copies.go": {}}
 		b.Run(fmt.Sprintf("%s-%d", test.name, count), func(b *testing.B) {
 			b.ReportMetric(float64(count), "pairs")

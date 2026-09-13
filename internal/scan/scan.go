@@ -135,7 +135,11 @@ func blobsWithConfig(rev string, blobs []gitread.Blob, config model.Config, skip
 		if !ok {
 			continue
 		}
-		snapshot.AnalysisPaths = append(snapshot.AnalysisPaths, model.AnalysisPath{File: blob.Path, Bucket: classification.Bucket})
+		gitLineCoordinates := true
+		if analyze.language == "typescript" {
+			gitLineCoordinates = lang.CountLineTerminators(blob.Content, false) == lang.CountLineTerminators(blob.Content, true)
+		}
+		snapshot.AnalysisPaths = append(snapshot.AnalysisPaths, model.AnalysisPath{File: blob.Path, Bucket: classification.Bucket, GitLineCoordinates: gitLineCoordinates})
 		result, found := cache.Get(blob.OID, analyze.dialect, blob.Path)
 		if !found {
 			analyzed, err := analyze.run(blob.Path, blob.Content)

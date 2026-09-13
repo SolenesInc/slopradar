@@ -58,7 +58,7 @@ func BuildWithLineChanges(base, head model.Snapshot, touched []string, lineChang
 	}
 	sortFunctionDeltas(result.Functions)
 
-	result.ClonesAdded, result.ClonesRemoved = cloneChanges(base.Clones, head.Clones, touchedSet, newLineMappings(lineChanges))
+	result.ClonesAdded, result.ClonesRemoved = cloneChanges(base.Clones, head.Clones, touchedSet, newLineMappings(lineChanges, compatibleGitLineCoordinates(base.AnalysisPaths, head.AnalysisPaths)))
 	baseCloneLines := touchedCloneLines(base.CloneCoverage, touchedSet)
 	headCloneLines := touchedCloneLines(head.CloneCoverage, touchedSet)
 	for _, bucket := range []model.Bucket{model.Source, model.Tests} {
@@ -371,7 +371,11 @@ type mappedLineChange struct {
 	delta       int
 }
 
-type lineMappings map[string][]mappedLineChange
+type lineMappings struct {
+	changes    map[string][]mappedLineChange
+	compatible map[string]bool
+	restricted bool
+}
 
 type clonePosition struct {
 	aFile  string
@@ -382,33 +386,48 @@ type clonePosition struct {
 	bEnd   int
 }
 
-func newLineMappings(changes []gitread.LineChange) lineMappings {
-	grouped := lineMappings{}
+func newLineMappings(changes []gitread.LineChange, compatible map[string]bool) lineMappings {
+	mappings := lineMappings{changes: map[string][]mappedLineChange{}, compatible: compatible, restricted: changes != nil}
 	for _, change := range changes {
 		boundary := change.BeforeStart
 		if change.BeforeCount == 0 {
 			boundary++
 		}
-		grouped[change.File] = append(grouped[change.File], mappedLineChange{
+		mappings.changes[change.File] = append(mappings.changes[change.File], mappedLineChange{
 			beforeStart: change.BeforeStart,
 			beforeCount: change.BeforeCount,
 			boundary:    boundary,
 			delta:       change.AfterCount - change.BeforeCount,
 		})
 	}
-	for file := range grouped {
-		sort.Slice(grouped[file], func(i, j int) bool { return grouped[file][i].boundary < grouped[file][j].boundary })
+	for file := range mappings.changes {
+		sort.Slice(mappings.changes[file], func(i, j int) bool { return mappings.changes[file][i].boundary < mappings.changes[file][j].boundary })
 		delta := 0
-		for i := range grouped[file] {
-			delta += grouped[file][i].delta
-			grouped[file][i].delta = delta
+		for i := range mappings.changes[file] {
+			delta += mappings.changes[file][i].delta
+			mappings.changes[file][i].delta = delta
 		}
 	}
-	return grouped
+	return mappings
+}
+
+func compatibleGitLineCoordinates(base, head []model.AnalysisPath) map[string]bool {
+	before := map[string]bool{}
+	for _, item := range base {
+		before[item.File] = item.GitLineCoordinates
+	}
+	compatible := map[string]bool{}
+	for _, item := range head {
+		compatible[item.File] = item.GitLineCoordinates && before[item.File]
+	}
+	return compatible
 }
 
 func (mappings lineMappings) line(file string, before int) (int, bool) {
-	changes := mappings[file]
+	if mappings.restricted && !mappings.compatible[file] {
+		return 0, false
+	}
+	changes := mappings.changes[file]
 	index := sort.Search(len(changes), func(i int) bool { return changes[i].boundary > before }) - 1
 	if index < 0 {
 		return before, true
