@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SolenesInc/slopradar/internal/gitread"
 	"github.com/SolenesInc/slopradar/internal/model"
 	"github.com/SolenesInc/slopradar/internal/report"
 	"github.com/SolenesInc/slopradar/internal/scan"
@@ -211,6 +212,38 @@ func TestCloneMappingPathsSelectsCompatibleCloneFilesInBothSnapshots(t *testing.
 	want := []string{"a.go", "b.go"}
 	if got := cloneMappingPaths(base, head); !reflect.DeepEqual(got, want) {
 		t.Fatalf("clone mapping paths = %#v, want %#v", got, want)
+	}
+}
+
+func BenchmarkCloneLineChanges(b *testing.B) {
+	repositoryPath := os.Getenv("SLOPRADAR_BENCH_REPOSITORY")
+	base := os.Getenv("SLOPRADAR_BENCH_BASE")
+	head := os.Getenv("SLOPRADAR_BENCH_HEAD")
+	if repositoryPath == "" || base == "" || head == "" {
+		b.Skip("set SLOPRADAR_BENCH_REPOSITORY, SLOPRADAR_BENCH_BASE and SLOPRADAR_BENCH_HEAD")
+	}
+	ctx := context.Background()
+	repository, err := gitread.Open(repositoryPath)
+	if err != nil {
+		b.Fatal(err)
+	}
+	baseSnapshot, err := scan.Revision(ctx, repositoryPath, base)
+	if err != nil {
+		b.Fatal(err)
+	}
+	headSnapshot, err := scan.Revision(ctx, repositoryPath, head)
+	if err != nil {
+		b.Fatal(err)
+	}
+	paths := cloneMappingPaths(baseSnapshot, headSnapshot)
+	b.ResetTimer()
+	for range b.N {
+		changes, err := repository.LineChanges(ctx, base, head, paths)
+		if err != nil {
+			b.Fatal(err)
+		}
+		b.ReportMetric(float64(len(paths)), "paths")
+		b.ReportMetric(float64(len(changes)), "hunks")
 	}
 }
 
