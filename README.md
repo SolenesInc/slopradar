@@ -154,6 +154,11 @@ Every function starts at CC 1. The following syntax adds one decision point.
 Python docstrings count as comments. Rust's `?` counts as an explicit
 error-flow decision, analogous to the explicit error checks visible in Go.
 
+Rust method names include their owner: `Worker::run` for an inherent method,
+`Service::run` for a trait default, and `<Worker as Service>::run` for a trait
+implementation. Nested test functions retain their test bucket in drill-down
+rows; totals still include only top-level functions.
+
 ## Baselines
 
 These are source-bucket erosion measurements made with the shipped CLI at
@@ -195,6 +200,13 @@ TypeScript analyzer uses Oxc, while the prototype used the TypeScript compiler.
 The Vitest and other TypeScript receipt directories omit declaration files, as
 the prototype did. The attn TypeScript receipt also excludes its unmarked
 `app/src/types/generated.ts`; a default scan includes unmarked generated output.
+
+Test-directory conventions are language-specific. The production Go analyzer
+in `x/tools/go/analysis/passes/tests/tests.go` is included as source. TypeScript
+helpers in ordinary `tests/` directories are also source unless their filenames
+or configured globs classify them as tests. This affects one zod helper and
+nine Excalidraw helper or fixture files in these scopes. The
+[baseline guide](docs/baselines.md) explains the corrected historical receipts.
 
 The Go analyzer uses the Go 1.27 standard parser and accepts generalized
 `new(expression)` and generic methods. The full standard-library scan completes

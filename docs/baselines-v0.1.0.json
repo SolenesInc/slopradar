@@ -58,7 +58,7 @@
       "erosion": 0.7210525537623697,
       "prototype_erosion_reported": 0.722,
       "difference_from_reported": -0.0009474462376303228,
-      "receipt": "Shipped parser includes module-level closures and parsed-comment SLOC semantics; the prototype walked FuncDecl rows and approximated comments line by line."
+      "receipt": "Historical receipt 0.7270964284200546 combined all 4137 source functions despite its Go-filtered command. The same old binary yields 4086 Go functions and 0.7222621700849018. Restoring Go-specific test classification adds 18 production functions in go/analysis/passes/tests/tests.go as source, yielding 4104 Go functions; all existing Go function CC/SLOC/mass remain unchanged. The prototype separately used FuncDecl rows and approximated comments line by line."
     },
     {
       "corpus": "honnef.co/go/tools",
@@ -116,7 +116,7 @@
       "mass_over_cc_10": 128048.82813439601,
       "erosion": 0.5927970974106356,
       "prototype_erosion": 0.59285762135,
-      "difference": -0.00006052393936439837,
+      "difference": -6.052393936439837e-05,
       "receipt": "All 6645 declared-function CC values match the Go AST prototype; four shipped module-level closures and parsed-comment SLOC differences account for the remaining row and mass differences."
     },
     {
@@ -132,7 +132,7 @@
       "erosion": 0.8041641478412456,
       "prototype_erosion_reported": 0.805,
       "difference_from_reported": -0.0008358521587544798,
-      "receipt": "The shipped analyzer uses Oxc; the prototype used the TypeScript compiler."
+      "receipt": "Oxc metrics are unchanged by class-owner naming and test-directory corrections. packages/zod/src/v3/tests/Mocker.ts now correctly follows TypeScript defaults as source; the old global tests/ convention classified it as tests. The prototype used the TypeScript compiler."
     },
     {
       "corpus": "vitest",
@@ -146,7 +146,7 @@
       "mass_over_cc_10": 56338.552631012644,
       "erosion": 0.6517182781040025,
       "prototype_erosion_reported": 0.652,
-      "difference_from_reported": -0.00028172189599751185,
+      "difference_from_reported": -0.00028172189599751183,
       "receipt": "The shipped analyzer uses Oxc; the prototype used the TypeScript compiler and excluded .d.ts. The comparable receipt scope retains that declaration-file omission."
     },
     {
@@ -162,7 +162,7 @@
       "erosion": 0.794778878170381,
       "prototype_erosion_reported": 0.796,
       "difference_from_reported": -0.0012211218296190873,
-      "receipt": "The shipped analyzer uses Oxc; the prototype used the TypeScript compiler."
+      "receipt": "Oxc metrics are unchanged by class-owner naming and test-directory corrections. Nine helper/fixture files under packages/excalidraw/tests/ now follow TypeScript defaults as source; the old global tests/ convention classified them as tests. The prototype used the TypeScript compiler."
     },
     {
       "corpus": "attn TypeScript",

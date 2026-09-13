@@ -144,3 +144,20 @@ standard-library receipt's 39,709 count accidentally included 75 JavaScript
 and 48 Python functions embedded under `$GOROOT/src`; its Go-only count was
 39,586. The standard parser reports 39,587 Go functions because it also parses
 `math/rand/v2.Rand.N`, the single source row the old parser missed.
+
+The historical `x/tools` receipt also mixed languages in its metric: its
+reported 0.7270964284200546 covered all 4,137 source functions. Applying its
+stated Go filter to the same historical binary yields 4,086 functions and
+0.7222621700849018. The current default classification includes the 18
+production functions in `go/analysis/passes/tests/tests.go`, which the old
+global `tests/` convention incorrectly classified as tests. Existing Go
+function CC, SLOC and mass are unchanged; the corrected scope has 4,104 Go
+functions and erosion 0.7210525537623697.
+
+The same classification correction makes zod's
+`packages/zod/src/v3/tests/Mocker.ts` and nine Excalidraw helper or fixture
+files under `packages/excalidraw/tests/` source. Their function metrics are
+unchanged. TypeScript defaults recognize `__tests__/`, `.test.*` and `.spec.*`;
+use explicit `test_globs` to classify additional helper directories. These
+receipts retain the documented input configurations rather than changing
+them to force the historical rounded values.
