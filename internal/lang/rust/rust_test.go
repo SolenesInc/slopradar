@@ -113,6 +113,7 @@ impl Widget {
         };
     }
 }
+
 #[cfg(test)]
 const FACTORY: fn() = || {};
 `)
