@@ -89,6 +89,29 @@ func TestRepositoryReadsTreesAndHistory(t *testing.T) {
 	}
 }
 
+func TestHistoryDatesUseCanonicalOffsets(t *testing.T) {
+	dir := t.TempDir()
+	git(t, dir, "init", "-b", "main")
+	git(t, dir, "config", "user.name", "Slopradar Test")
+	git(t, dir, "config", "user.email", "test@slopradar.invalid")
+	for _, date := range []string{"2026-01-10T12:00:00+00:00", "2026-02-20T12:00:00+02:00"} {
+		t.Setenv("GIT_AUTHOR_DATE", date)
+		t.Setenv("GIT_COMMITTER_DATE", date)
+		git(t, dir, "commit", "--allow-empty", "-m", date)
+	}
+	repo, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commits, err := repo.FirstParentCommits(context.Background(), "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(commits) != 2 || commits[0].Date != "2026-02-20T12:00:00+02:00" || commits[1].Date != "2026-01-10T12:00:00Z" {
+		t.Fatalf("history dates = %#v", commits)
+	}
+}
+
 func TestReadDirectoryIsDeterministicAndSkipsSymlinks(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, "z.txt", "z")

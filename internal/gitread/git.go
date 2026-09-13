@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type BlobInfo struct {
@@ -258,7 +259,12 @@ func (r *Repository) firstParentHistory(ctx context.Context, rev string, limit i
 		return nil, fmt.Errorf("git log returned an invalid first-parent history record")
 	}
 	for i := 0; i < len(fields); i += logFieldCount {
-		commits = append(commits, Commit{Rev: string(fields[i+logRevisionField]), Date: string(fields[i+logDateField])})
+		revision := string(fields[i+logRevisionField])
+		date, err := time.Parse(time.RFC3339, string(fields[i+logDateField]))
+		if err != nil {
+			return nil, fmt.Errorf("parse git commit date for %s: %w", revision, err)
+		}
+		commits = append(commits, Commit{Rev: revision, Date: date.Format(time.RFC3339)})
 	}
 	return commits, nil
 }
