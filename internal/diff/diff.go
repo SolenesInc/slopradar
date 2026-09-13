@@ -126,62 +126,71 @@ func analysisPathBuckets(paths []model.AnalysisPath) map[string]model.Bucket {
 	return result
 }
 
-func changedFunctions(before, after []model.Function, mappings lineMappings) ([]model.Function, []model.Function) {
-	type signaturePosition struct {
-		signature string
-		line      int
-	}
-	afterByPosition := make(map[signaturePosition][]int, len(after))
-	afterSignatures := make([]string, len(after))
+type functionMatch struct {
+	before *model.Function
+	after  *model.Function
+}
+
+func matchFunctions(before, after []model.Function, mappings lineMappings) []functionMatch {
+	afterByLine := make(map[int][]int, len(after))
 	for i, function := range after {
-		afterSignatures[i] = functionTreeSignature(function)
-		position := signaturePosition{afterSignatures[i], function.Line}
-		afterByPosition[position] = append(afterByPosition[position], i)
+		afterByLine[function.Line] = append(afterByLine[function.Line], i)
 	}
 	matchedBefore := make([]bool, len(before))
 	matchedAfter := make([]bool, len(after))
-	beforeSignatures := make([]string, len(before))
+	matches := make([]functionMatch, 0, max(len(before), len(after)))
+	match := func(i, j int) {
+		matchedBefore[i], matchedAfter[j] = true, true
+		matches = append(matches, functionMatch{&before[i], &after[j]})
+	}
 	for i, function := range before {
-		beforeSignatures[i] = functionTreeSignature(function)
 		line, mapped := mappings.line(function.File, function.Line)
 		if !mapped {
 			continue
 		}
-		position := signaturePosition{beforeSignatures[i], line}
-		candidates := afterByPosition[position]
+		candidates := afterByLine[line]
 		if len(candidates) != 0 {
-			matchedBefore[i] = true
-			matchedAfter[candidates[0]] = true
-			afterByPosition[position] = candidates[1:]
+			match(i, candidates[0])
+			afterByLine[line] = candidates[1:]
 		}
 	}
 	afterBySignature := make(map[string][]int, len(after))
-	for i, signature := range afterSignatures {
+	for i, function := range after {
 		if !matchedAfter[i] {
+			signature := functionTreeSignature(function)
 			afterBySignature[signature] = append(afterBySignature[signature], i)
 		}
 	}
-	changedBefore := make([]model.Function, 0, len(before))
+	var remainingBefore, remainingAfter []int
 	for i, function := range before {
 		if matchedBefore[i] {
 			continue
 		}
-		signature := beforeSignatures[i]
+		signature := functionTreeSignature(function)
 		candidates := afterBySignature[signature]
 		if len(candidates) == 0 {
-			changedBefore = append(changedBefore, function)
+			remainingBefore = append(remainingBefore, i)
 			continue
 		}
-		matchedAfter[candidates[0]] = true
+		match(i, candidates[0])
 		afterBySignature[signature] = candidates[1:]
 	}
-	changedAfter := make([]model.Function, 0, len(after))
-	for i, function := range after {
+	for i := range after {
 		if !matchedAfter[i] {
-			changedAfter = append(changedAfter, function)
+			remainingAfter = append(remainingAfter, i)
 		}
 	}
-	return changedBefore, changedAfter
+	for i := 0; i < max(len(remainingBefore), len(remainingAfter)); i++ {
+		var pair functionMatch
+		if i < len(remainingBefore) {
+			pair.before = &before[remainingBefore[i]]
+		}
+		if i < len(remainingAfter) {
+			pair.after = &after[remainingAfter[i]]
+		}
+		matches = append(matches, pair)
+	}
+	return matches
 }
 
 func functionTreeSignature(function model.Function) string {
@@ -215,20 +224,15 @@ func writeSignatureString(signature *strings.Builder, value string) {
 }
 
 func functionDeltas(key functionKey, before, after []model.Function, mappings lineMappings) []model.FunctionDelta {
-	before, after = changedFunctions(before, after, mappings)
-	count := max(len(before), len(after))
-	deltas := make([]model.FunctionDelta, 0, count)
-	for i := 0; i < count; i++ {
-		var baseFunction, headFunction *model.Function
-		if i < len(before) {
-			item := before[i]
-			baseFunction = &item
+	deltas := make([]model.FunctionDelta, 0, max(len(before), len(after)))
+	for _, pair := range matchFunctions(before, after, mappings) {
+		delta := functionDelta(key, pair.before, pair.after, mappings)
+		if pair.before != nil && pair.after != nil && len(delta.Nested) == 0 &&
+			pair.before.CC == pair.after.CC && pair.before.SLOC == pair.after.SLOC &&
+			pair.before.Mass == pair.after.Mass && functionBucket(*pair.before) == functionBucket(*pair.after) {
+			continue
 		}
-		if i < len(after) {
-			item := after[i]
-			headFunction = &item
-		}
-		deltas = append(deltas, functionDelta(key, baseFunction, headFunction, mappings))
+		deltas = append(deltas, delta)
 	}
 	return deltas
 }

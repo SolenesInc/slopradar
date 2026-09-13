@@ -175,7 +175,13 @@ func isComment(node *sitter.Node, source []byte) bool {
 	if body == nil || !docstringBody(body) {
 		return false
 	}
-	return body.NamedChildCount() > 0 && body.NamedChild(0).Id() == expression.Id()
+	for i := uint(0); i < body.NamedChildCount(); i++ {
+		statement := body.NamedChild(i)
+		if statement.Kind() != "comment" {
+			return statement.Id() == expression.Id()
+		}
+	}
+	return false
 }
 
 func plainString(node *sitter.Node, source []byte) bool {

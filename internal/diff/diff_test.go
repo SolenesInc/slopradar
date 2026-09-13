@@ -95,6 +95,38 @@ func TestBuildKeepsNestedChangesWhenParentMetricsAreEqual(t *testing.T) {
 	}
 }
 
+func TestBuildKeepsMappedNestedMetricSwapsWithEqualParentSignature(t *testing.T) {
+	before := functionAt("same.go", "outer", model.Source, 1, 7, 20)
+	before.Nested = []model.Function{
+		functionAt("same.go", "(anonymous)", model.Source, 2, 2, 4),
+		functionAt("same.go", "(anonymous)", model.Source, 10, 4, 4),
+	}
+	after := functionAt("same.go", "outer", model.Source, 1, 7, 20)
+	after.Nested = []model.Function{
+		functionAt("same.go", "(anonymous)", model.Source, 2, 4, 4),
+		functionAt("same.go", "(anonymous)", model.Source, 10, 2, 4),
+	}
+	base := snapshot("base", []model.Function{before}, model.Totals{}, model.Totals{})
+	head := snapshot("head", []model.Function{after}, model.Totals{}, model.Totals{})
+	base.AnalysisPaths = []model.AnalysisPath{{File: "same.go", Bucket: model.Source, GitLineCoordinates: true}}
+	head.AnalysisPaths = base.AnalysisPaths
+	got, err := BuildWithLineChanges(base, head, []string{"same.go"}, []gitread.LineChange{
+		{File: "same.go", BeforeStart: 3, BeforeCount: 1, AfterStart: 3, AfterCount: 1},
+		{File: "same.go", BeforeStart: 11, BeforeCount: 1, AfterStart: 11, AfterCount: 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Functions) != 1 || got.Functions[0].DeltaMass != 0 || len(got.Functions[0].Nested) != 2 {
+		t.Fatalf("deltas = %+v", got.Functions)
+	}
+	for _, delta := range got.Functions[0].Nested {
+		if delta.Before.Line != delta.After.Line || delta.Before.CC == delta.After.CC {
+			t.Fatalf("nested before=%+v after=%+v", delta.Before, delta.After)
+		}
+	}
+}
+
 func TestBuildMapsRepeatedNestedFunctionsBeforeMatchingMetrics(t *testing.T) {
 	before := functionAt("same.go", "outer", model.Source, 1, 7, 30)
 	before.Nested = []model.Function{

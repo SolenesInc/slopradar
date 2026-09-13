@@ -366,3 +366,22 @@ func TestClassOwnerStopsAtLambdaBoundary(t *testing.T) {
 		t.Fatalf("nested = %#v", result.Functions[0].Nested)
 	}
 }
+
+func TestDocstringsIgnorePrecedingComments(t *testing.T) {
+	source := []byte("#!/usr/bin/python3\n# module comment\n\"module doc\"\nclass C:\n    # class comment\n    \"class doc\"\n    def f(self):\n        # function comment\n        \"function doc\"\n        return 1\n")
+	result, err := Analyze("comments.py", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Warnings) != 0 || len(result.Functions) != 1 || result.Functions[0].SLOC != 2 {
+		t.Fatalf("functions=%+v warnings=%v", result.Functions, result.Warnings)
+	}
+	for _, token := range result.Tokens {
+		if strings.Contains(token.Text, "doc") || strings.Contains(token.Text, "comment") {
+			t.Fatalf("documentation token retained: %+v", token)
+		}
+	}
+	if got := lang.CountLines(source, result.Comments, result.TestSpans)[model.Source]; got != 3 {
+		t.Fatalf("source lines=%d, want class, function, return", got)
+	}
+}

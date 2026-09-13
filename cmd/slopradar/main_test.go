@@ -503,6 +503,38 @@ func TestDiffLocatesRepeatedInitWhenMetricsConverge(t *testing.T) {
 	}
 }
 
+func TestDiffReportsRepeatedInitMetricSwapsAtMappedLines(t *testing.T) {
+	dir := t.TempDir()
+	gitCommand(t, dir, "init", "-b", "main")
+	gitCommand(t, dir, "config", "user.name", "Slopradar Test")
+	gitCommand(t, dir, "config", "user.email", "test@slopradar.invalid")
+	writeFile(t, dir, "repeated.go", "package fixture\n\nfunc init() {\n if a {}\n}\n\nfunc init() {\n if b && c && d {}\n}\n")
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "base")
+	writeFile(t, dir, "repeated.go", "package fixture\n\nfunc init() {\n if a && e && f {}\n}\n\nfunc init() {\n if b {}\n}\n")
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "swap metrics")
+	t.Chdir(dir)
+	result := commandDiff(t, "HEAD^", "HEAD")
+	if len(result.Functions) != 2 {
+		t.Fatalf("swapped init deltas = %+v", result.Functions)
+	}
+	for _, delta := range result.Functions {
+		if delta.Before == nil || delta.After == nil || delta.Before.Line != delta.After.Line {
+			t.Fatalf("mismatched location = %+v", delta)
+		}
+		before, after := 2, 4
+		if delta.Before.Line == 7 {
+			before, after = 4, 2
+		} else if delta.Before.Line != 3 {
+			t.Fatalf("unexpected init line = %d", delta.Before.Line)
+		}
+		if delta.Before.CC != before || delta.After.CC != after {
+			t.Fatalf("before=%+v after=%+v", delta.Before, delta.After)
+		}
+	}
+}
+
 func TestDiffRemovesDeletedRepeatedCloneOccurrence(t *testing.T) {
 	dir := t.TempDir()
 	gitCommand(t, dir, "init", "-b", "main")
