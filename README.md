@@ -53,6 +53,10 @@ permissions:
   contents: read
   pull-requests: write
 
+concurrency:
+  group: slopradar-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
 jobs:
   slopradar:
     runs-on: ubuntu-latest
@@ -69,7 +73,9 @@ so a moved ref or fork cannot mix code from two sources. The standalone
 versioned `go install` command above remains available for CLI installation.
 
 The action always writes the report to the job summary. It creates one PR
-comment and updates that same comment on later runs. On a fork pull request, or
+comment and updates that same comment on later runs. The concurrency group
+serializes report runs per PR; keep it when copying the workflow. A run for
+an older PR head skips comment publication. On a fork pull request, or
 a [Dependabot pull request whose token is read-only](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-on-actions#restrictions-when-dependabot-triggers-events),
 it keeps the summary and says in the job log that it skipped the comment. Other
 API failures stay visible. The numbers never fail the job.

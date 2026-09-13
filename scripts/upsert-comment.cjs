@@ -59,6 +59,20 @@ module.exports = async function upsertComment({
       (comment) => comment.user?.login === "github-actions[bot]" && comment.body?.startsWith(marker),
     )
 
+    const expectedHead = pullRequest.head?.sha
+    if (!expectedHead) {
+      throw new Error("pull request event does not identify its head SHA")
+    }
+    const current = await github.rest.pulls.get({
+      owner: request.owner,
+      repo: request.repo,
+      pull_number: pullRequest.number,
+    })
+    if (current.data.head.sha !== expectedHead) {
+      core.info(`slopradar comment skipped: report head ${expectedHead} differs from current PR head ${current.data.head.sha}`)
+      return
+    }
+
     if (existing) {
       await github.rest.issues.updateComment({
         owner: request.owner,

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/SolenesInc/slopradar/internal/diff"
+	"github.com/SolenesInc/slopradar/internal/lang"
 	"github.com/SolenesInc/slopradar/internal/model"
 )
 
@@ -408,5 +409,24 @@ function outside() {}
 	}
 	if got := result.Functions[0].Nested; len(got) != 1 || got[0].Name != "local" {
 		t.Fatalf("nested = %#v", got)
+	}
+}
+
+func TestHashbangExcludedFromSourceLines(t *testing.T) {
+	for _, suffix := range []string{"ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"} {
+		for _, terminator := range []string{"\n", "\r\n", "\r", "\u2028", "\u2029"} {
+			source := []byte("#!/usr/bin/env node" + terminator + "function f() {}")
+			result, err := Analyze("executable."+suffix, source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.Comments) != 1 || result.Comments[0].StartByte != 0 || result.Comments[0].EndByte != len("#!/usr/bin/env node") {
+				t.Fatalf("%s %q comments = %#v", suffix, terminator, result.Comments)
+			}
+			lines := lang.JavaScriptSourceLines(source, result.Comments, result.TestSpans)
+			if !reflect.DeepEqual(lines[model.Source], []int{2}) {
+				t.Fatalf("source lines = %v", lines)
+			}
+		}
 	}
 }

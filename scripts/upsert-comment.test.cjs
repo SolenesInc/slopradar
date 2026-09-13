@@ -16,6 +16,7 @@ function issueAPI() {
     github: {
       paginate: async () => comments,
       rest: {
+        pulls: {get: async () => ({data: {head: {sha: "current-head"}}})},
         issues: {
           listComments: async () => ({data: comments}),
           createComment: async ({body}) => {
@@ -42,7 +43,7 @@ function issueAPI() {
 function pullRequestContext(headRepository = "SolenesInc/slopradar", author = "victor") {
   return {
     repo: {owner: "SolenesInc", repo: "slopradar"},
-    payload: {pull_request: {number: 1, head: {repo: {full_name: headRepository}}, user: {login: author}}},
+    payload: {pull_request: {number: 1, head: {sha: "current-head", repo: {full_name: headRepository}}, user: {login: author}}},
   }
 }
 
@@ -165,4 +166,24 @@ test("upserts a bounded structural comment while preserving the report file", as
   assert.doesNotMatch(api.comments[0].body, /<details>/)
   assert.ok(api.comments[0].body.length <= githubCommentMaxUTF16CodeUnits)
   assert.match(warnings[0], /max_comment_utf16_code_units=65536/)
+})
+
+test("stale runs neither create a duplicate nor overwrite the current report", async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "slopradar-stale-"))
+  t.after(() => fs.rmSync(directory, {recursive: true}))
+  const reportPath = path.join(directory, "report.md")
+  fs.writeFileSync(reportPath, "<!-- slopradar -->\ncurrent report\n")
+  const api = issueAPI()
+  const messages = []
+  const core = {info: (message) => messages.push(message)}
+  const stale = pullRequestContext()
+  stale.payload.pull_request.head.sha = "previous-head"
+  await upsertComment({github: api.github, context: stale, core, reportPath, commentEnabled: "true"})
+  assert.equal(api.comments.length, 0)
+  await upsertComment({github: api.github, context: pullRequestContext(), core, reportPath, commentEnabled: "true"})
+  fs.writeFileSync(reportPath, "<!-- slopradar -->\nstale report\n")
+  await upsertComment({github: api.github, context: stale, core, reportPath, commentEnabled: "true"})
+  assert.equal(api.comments.length, 1)
+  assert.equal(api.comments[0].body, "<!-- slopradar -->\ncurrent report\n")
+  assert.equal(messages.filter((message) => message.includes("differs from current PR head")).length, 2)
 })

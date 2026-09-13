@@ -116,3 +116,27 @@ func TestDiffReportsSwappedNamespaceMetrics(t *testing.T) {
 		}
 	}
 }
+
+func TestScanExcludesHashbangFromLineTotals(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "executable.mjs", "#!/usr/bin/env node\nfunction f() {}\n")
+	gitCommand(t, dir, "init", "-b", "main")
+	gitCommand(t, dir, "config", "user.name", "Slopradar Test")
+	gitCommand(t, dir, "config", "user.email", "test@slopradar.invalid")
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "executable")
+	t.Chdir(dir)
+	for _, target := range []string{dir, "HEAD"} {
+		var output bytes.Buffer
+		if err := run(context.Background(), []string{"scan", target, "--format=json", "--no-cache"}, &output); err != nil {
+			t.Fatal(err)
+		}
+		var got model.Snapshot
+		if err := json.Unmarshal(output.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.Buckets[model.Source].SourceLines != 1 || len(got.Functions) != 1 || got.Functions[0].Line != 2 {
+			t.Fatalf("scan %s = %#v", target, got)
+		}
+	}
+}

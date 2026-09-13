@@ -211,12 +211,17 @@ fn analyze_source(file: &str, source: &str) -> Analysis {
     }
 
     let line_starts = line_starts(source);
-    let comments = parsed
+    let comment_spans = parsed
         .program
-        .comments
+        .hashbang
         .iter()
-        .map(|comment| source_range(comment.span, &line_starts))
+        .map(|hashbang| hashbang.span)
+        .chain(parsed.program.comments.iter().map(|comment| comment.span))
         .collect::<Vec<_>>();
+    let comments = comment_spans
+        .iter()
+        .map(|span| source_range(*span, &line_starts))
+        .collect();
     let tokens = parsed
         .tokens
         .iter()
@@ -225,7 +230,7 @@ fn analyze_source(file: &str, source: &str) -> Analysis {
             line: line_of(token.start() as usize, &line_starts),
         })
         .collect::<Vec<_>>();
-    let code_lines = code_lines(source, &parsed.program.comments);
+    let code_lines = code_lines(source, &comment_spans);
     let mut visitor = MetricVisitor::new(source, &line_starts, &code_lines);
     visitor.visit_program(&parsed.program);
 
@@ -281,11 +286,11 @@ fn source_range(span: Span, starts: &[usize]) -> SourceRange {
     }
 }
 
-fn code_lines(source: &str, comments: &[Comment]) -> Vec<bool> {
+fn code_lines(source: &str, comments: &[Span]) -> Vec<bool> {
     let mut bytes = source.as_bytes().to_vec();
     for comment in comments {
-        let mut offset = comment.span.start as usize;
-        while offset < comment.span.end as usize {
+        let mut offset = comment.start as usize;
+        while offset < comment.end as usize {
             let width = line_terminator_width(&bytes, offset);
             if width == 0 {
                 bytes[offset] = b' ';
@@ -817,4 +822,20 @@ fn namespace_owners_preserve_local_function_boundaries() {
         ["A.B.run", "A.B.arrow", "A.B.C.run", "D.run", "outside"]
     );
     assert_eq!(analysis.functions[0].nested[0].name, "local");
+}
+
+#[cfg(test)]
+#[test]
+fn hashbang_is_a_comment_for_tokens_and_source_lines() {
+    for terminator in ["\n", "\r\n", "\r", "\u{2028}", "\u{2029}"] {
+        let source = format!("#!/usr/bin/env node{terminator}function f() {{}}");
+        let analysis = analyze_source("example.mjs", &source);
+        assert_eq!(analysis.status, Status::Ok);
+        assert_eq!(analysis.comments.len(), 1);
+        assert_eq!(analysis.comments[0].start_byte, 0);
+        assert_eq!(analysis.comments[0].end_byte, 19);
+        assert_eq!(analysis.functions[0].line, 2);
+        assert_eq!(analysis.functions[0].sloc, 1);
+        assert_eq!(analysis.tokens[0].line, 2);
+    }
 }
