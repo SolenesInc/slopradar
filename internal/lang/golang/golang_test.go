@@ -2,12 +2,15 @@ package golang
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/SolenesInc/slopradar/internal/clones"
+	"github.com/SolenesInc/slopradar/internal/lang"
 	"github.com/SolenesInc/slopradar/internal/model"
 )
 
@@ -223,6 +226,61 @@ func TestWhitespaceOnlyStringContentsRemainCloneTokens(t *testing.T) {
 	}
 	if !reflect.DeepEqual(contents, []string{" ", "  ", "\t"}) {
 		t.Fatalf("whitespace string tokens = %#v", contents)
+	}
+}
+
+func TestWhitespaceOnlyStringContentsPreventFalseExactClones(t *testing.T) {
+	firstSource := []byte(`package fixture
+func sample() {
+	one := 1
+	two := 2
+	three := 3
+	four := 4
+	five := " "
+	six := 6
+	seven := 7
+	_ = one
+	_ = two
+	_ = three
+	_ = four
+	_ = five
+	_ = six
+	return
+	return
+}
+`)
+	secondSource := []byte(strings.ReplaceAll(string(firstSource), `" "`, `"  "`))
+	sources := [][]byte{firstSource, secondSource}
+	files := make([]clones.File, 0, len(sources))
+	oldFiles := make([]clones.File, 0, len(sources))
+	for index, source := range sources {
+		result, err := Analyze(fmt.Sprintf("fixture-%d.go", index), source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Tokens) != clones.JscpdDefaultMinimumTokens+1 {
+			t.Fatalf("tokens = %d, want %d", len(result.Tokens), clones.JscpdDefaultMinimumTokens+1)
+		}
+		sourceLines := lang.SourceLines(source, result.Comments, result.TestSpans)
+		if len(sourceLines[model.Source]) < clones.JscpdDefaultMinimumLines {
+			t.Fatalf("source lines = %d, want at least %d", len(sourceLines[model.Source]), clones.JscpdDefaultMinimumLines)
+		}
+		path := fmt.Sprintf("fixture-%d.go", index)
+		files = append(files, clones.File{Path: path, Language: "go", Tokens: result.Tokens, SourceLines: sourceLines})
+		oldTokens := make([]lang.Token, 0, len(result.Tokens))
+		for _, item := range result.Tokens {
+			if strings.TrimSpace(item.Text) == "" {
+				continue
+			}
+			oldTokens = append(oldTokens, item)
+		}
+		oldFiles = append(oldFiles, clones.File{Path: path, Language: "go", Tokens: oldTokens, SourceLines: sourceLines})
+	}
+	if result := clones.Detect(oldFiles); len(result.Pairs) != 1 || result.Pairs[0].Tokens != clones.JscpdDefaultMinimumTokens {
+		t.Fatalf("old filtered clone result = %#v", result.Pairs)
+	}
+	if result := clones.Detect(files); len(result.Pairs) != 0 {
+		t.Fatalf("whitespace-sensitive clone result = %#v", result.Pairs)
 	}
 }
 
