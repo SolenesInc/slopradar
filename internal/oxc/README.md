@@ -11,11 +11,12 @@ project plan:
 | `linux/arm64` | `aarch64-unknown-linux-gnu` | `lib/linux_arm64/provenance.json` |
 | `linux/amd64` | `x86_64-unknown-linux-gnu` | `lib/linux_amd64/provenance.json` |
 
-Compatibility receipt at commit `b1d8d4b`: archives with source SHA-256
-`efecbd9ca90b23a6cb2eb1d1bf0e9040f246e32877fbe6a9f3dedeb5a7eedbd8`
-linked, passed the Go suite, and ran the CLI with Go `1.24.13` on both
-architectures in `golang:1.24-bookworm`. `ldd --version` in that image reports
-Debian GLIBC `2.36-9+deb12u13`; the linked executable uses libc, libm and
+Compatibility receipt at commit `a74c1e4`: archives with source SHA-256
+`2444394a9fda1651bcb1319396bea4b81ac90a2e965d9dcdcebba3cfa86d10de`
+linked, passed the Go suite, installed from source, and ran the object-owner
+fixture on both architectures in `golang:1.27-bookworm`, without Rust, Cargo or
+Node installed. Both consumers used Go `1.27.1`. `ldd --version` in that image
+reports Debian GLIBC `2.36-9+deb12u14`; the linked executable uses libc, libm and
 libgcc_s from the image.
 
 Installing slopradar needs Go, cgo and a C compiler. It does not need Rust,
