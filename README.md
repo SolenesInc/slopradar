@@ -156,7 +156,9 @@ each bucket. File-wide test classification counts that shared line only once;
 clone pair lengths count distinct physical lines across both buckets.
 
 Rust test scope follows external `mod` declarations through `name.rs`,
-`name/mod.rs`, nested inline modules, and literal `#[path]` attributes. A file
+`name/mod.rs`, nested inline modules, and literal `#[path]` attributes. Each
+import retains the directory used to resolve its child modules, including when
+the same file is loaded through ordinary and `#[path]` declarations. A file
 also reachable from production keeps its source bucket. Scope is recomputed
 for each snapshot, including when an unchanged child comes from the cache;
 parent-only scope changes appear in the diff. File-level `#![cfg(test)]` also

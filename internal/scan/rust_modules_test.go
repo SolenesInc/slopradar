@@ -30,6 +30,10 @@ func TestRustExternalModuleScopes(t *testing.T) {
 		{"path relative to declaring file", map[string]string{"src/lib.rs": "mod ordinary;", "src/ordinary.rs": "#[cfg(test)] #[path = \"elsewhere.rs\"] mod helpers;", "src/elsewhere.rs": "fn helper() {}"}, []string{"src/elsewhere.rs"}, false},
 		{"nested path", map[string]string{"src/lib.rs": "mod ordinary;", "src/ordinary.rs": "#[cfg(test)] mod inline { #[path = \"elsewhere.rs\"] mod helpers; }", "src/ordinary/inline/elsewhere.rs": "fn helper() {}"}, []string{"src/ordinary/inline/elsewhere.rs"}, false},
 		{"inline path override", map[string]string{"src/lib.rs": "#[cfg(test)] #[path = \"custom\"] mod inline { #[path = \"elsewhere.rs\"] mod helpers; }", "src/custom/elsewhere.rs": "fn helper() {}"}, []string{"src/custom/elsewhere.rs"}, false},
+		{"path target children", map[string]string{"src/lib.rs": "#[cfg(test)] #[path=\"weird.rs\"] mod a;", "src/weird.rs": "mod child; fn helper() {}", "src/child.rs": "fn child() {}"}, []string{"src/weird.rs", "src/child.rs"}, false},
+		{"shared file distinct directory contexts", map[string]string{"src/lib.rs": "mod shared; #[cfg(test)] #[path=\"shared.rs\"] mod testing;", "src/shared.rs": "mod child; fn shared() {}", "src/shared/child.rs": "fn ordinary_child() {}", "src/child.rs": "fn path_child() {}"}, []string{"src/child.rs"}, false},
+		{"path target inner cfg", map[string]string{"src/lib.rs": "#[path=\"weird.rs\"] mod a;", "src/weird.rs": "#![cfg(test)]\nmod child; fn helper() {}", "src/child.rs": "fn child() {}"}, []string{"src/weird.rs", "src/child.rs"}, false},
+		{"path target inline children", map[string]string{"src/lib.rs": "#[cfg(test)] #[path=\"weird.rs\"] mod a;", "src/weird.rs": "mod inner { mod child; }", "src/inner/child.rs": "fn child() {}"}, []string{"src/inner/child.rs"}, false},
 		{"shared production", map[string]string{"src/lib.rs": "#[cfg(test)] #[path=\"shared.rs\"] mod tests; #[path=\"shared.rs\"] mod production;", "src/shared.rs": "fn shared() {}"}, nil, false},
 		{"unknown feature", map[string]string{"src/lib.rs": "#[cfg(any(test, feature=\"production\"))] mod shared;", "src/shared.rs": "fn shared() {}"}, nil, false},
 		{"file inner cfg", map[string]string{"src/lib.rs": "mod helpers;", "src/helpers.rs": "#![cfg(test)]\nmod child; fn helper() {}", "src/helpers/child.rs": "fn child() {}"}, []string{"src/helpers.rs", "src/helpers/child.rs"}, false},
@@ -95,6 +99,55 @@ func TestRustExternalModuleScopes(t *testing.T) {
 				t.Fatal("classification depends on blob order")
 			}
 		})
+	}
+}
+
+func TestRustPathContextReclassifiesOnlyItsCachedChild(t *testing.T) {
+	dir := t.TempDir()
+	gitForScan(t, dir, "init", "-b", "main")
+	gitForScan(t, dir, "config", "user.name", "Slopradar Test")
+	gitForScan(t, dir, "config", "user.email", "test@slopradar.invalid")
+	if err := os.MkdirAll(filepath.Join(dir, "src/shared"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeScanFile(t, dir, "src/lib.rs", "mod shared; #[path=\"shared.rs\"] mod extra;\n")
+	writeScanFile(t, dir, "src/shared.rs", "mod child; fn shared() {}\n")
+	writeScanFile(t, dir, "src/shared/child.rs", "fn ordinary_child() {}\n")
+	writeScanFile(t, dir, "src/child.rs", "fn path_child() {}\n")
+	gitForScan(t, dir, "add", ".")
+	gitForScan(t, dir, "commit", "-m", "both source contexts")
+	store := analysiscache.New(t.TempDir(), analysiscache.AnalyzerVersion)
+	before, err := RevisionWithCache(context.Background(), dir, "HEAD", store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeScanFile(t, dir, "src/lib.rs", "mod shared; #[cfg(test)] #[path=\"shared.rs\"] mod extra;\n")
+	gitForScan(t, dir, "add", ".")
+	gitForScan(t, dir, "commit", "-m", "test path context")
+	after, err := RevisionWithCache(context.Background(), dir, "HEAD", store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uncached, err := Revision(context.Background(), dir, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory, err := Directory(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(after, uncached) || !reflect.DeepEqual(after.Functions, directory.Functions) || !reflect.DeepEqual(after.Buckets, directory.Buckets) {
+		t.Fatal("directory or cache changed module context")
+	}
+	if len(before.Warnings) != 0 || len(after.Warnings) != 0 || len(directory.Warnings) != 0 || before.Buckets[model.Source].Functions != 3 || after.Buckets[model.Source].Functions != 2 || after.Buckets[model.Tests].Functions != 1 {
+		t.Fatalf("before=%+v after=%+v warnings=%v/%v/%v", before.Buckets, after.Buckets, before.Warnings, after.Warnings, directory.Warnings)
+	}
+	change, err := diff.Build(before, after, []string{"src/lib.rs"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(change.Functions) != 1 || change.Functions[0].File != "src/child.rs" || change.Functions[0].Before.Bucket != model.Source || change.Functions[0].After.Bucket != model.Tests {
+		t.Fatalf("context diff = %+v", change.Functions)
 	}
 }
 

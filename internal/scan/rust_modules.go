@@ -3,14 +3,20 @@ package scan
 import (
 	"fmt"
 	"path"
+	"sort"
 	"strings"
 
 	"github.com/SolenesInc/slopradar/internal/lang"
 	"github.com/SolenesInc/slopradar/internal/model"
 )
 
+type moduleContext struct {
+	file      int
+	directory string
+}
+
 type moduleEdge struct {
-	to        int
+	to        moduleContext
 	testOnly  bool
 	uncertain bool
 }
@@ -18,51 +24,77 @@ type moduleEdge struct {
 type moduleResolver struct {
 	files    []analyzedFile
 	index    map[string]int
-	edges    map[int][]moduleEdge
+	edges    map[moduleContext][]moduleEdge
 	incoming map[int]bool
-	warnings []string
+	warnings map[moduleContext][]string
+	pending  []moduleContext
 	packages map[string]bool
 	ignored  map[string]bool
 	config   model.Config
 }
 
 func classifyRustModules(files []analyzedFile, ignored, packages map[string]bool, config model.Config) []string {
-	r := moduleResolver{files: files, ignored: ignored, packages: packages, config: config, index: map[string]int{}, edges: map[int][]moduleEdge{}, incoming: map[int]bool{}}
+	r := moduleResolver{
+		files: files, ignored: ignored, packages: packages, config: config,
+		index: map[string]int{}, edges: map[moduleContext][]moduleEdge{},
+		incoming: map[int]bool{}, warnings: map[moduleContext][]string{},
+	}
 	for i, file := range files {
 		if file.analysis.language == "rust" {
 			r.index[file.blob.Path] = i
+			r.pending = append(r.pending, r.defaultContext(i))
 		}
 	}
-	for i, file := range files {
-		if file.analysis.language != "rust" {
+	r.discover()
+	return r.classify()
+}
+
+func (r *moduleResolver) defaultContext(file int) moduleContext {
+	name := r.files[file].blob.Path
+	return moduleContext{file, rustModuleDirectory(name, r.crateRoot(name))}
+}
+
+func rustModuleDirectory(file string, explicit bool) string {
+	directory := path.Dir(file)
+	if !explicit && path.Base(file) != "mod.rs" {
+		directory = path.Join(directory, strings.TrimSuffix(path.Base(file), path.Ext(file)))
+	}
+	return directory
+}
+
+func (r *moduleResolver) discover() {
+	seen := map[moduleContext]bool{}
+	for len(r.pending) > 0 {
+		current := r.pending[len(r.pending)-1]
+		r.pending = r.pending[:len(r.pending)-1]
+		if seen[current] {
 			continue
 		}
-		dir := path.Dir(file.blob.Path)
-		moduleDir := dir
-		if !r.crateRoot(file.blob.Path) && path.Base(file.blob.Path) != "mod.rs" {
-			moduleDir = path.Join(dir, strings.TrimSuffix(path.Base(file.blob.Path), path.Ext(file.blob.Path)))
-		}
-		r.resolve(i, file.result.Modules, moduleDir, dir, false, false)
+		seen[current] = true
+		file := r.files[current.file]
+		r.resolve(current, file.result.Modules, current.directory, path.Dir(file.blob.Path), false, false)
 	}
+}
+
+func (r *moduleResolver) classify() []string {
 	type state struct {
-		file   int
-		bucket model.Bucket
+		context moduleContext
+		bucket  model.Bucket
 	}
 	var pending []state
-	for i, file := range files {
-		if file.analysis.language != "rust" {
-			continue
-		}
-		if !r.incoming[i] || file.bucket == model.Tests || file.result.TestOnly || r.crateRoot(file.blob.Path) {
-			pending = append(pending, state{i, file.bucket})
+	for i, file := range r.files {
+		if file.analysis.language == "rust" && (!r.incoming[i] || r.crateRoot(file.blob.Path)) {
+			pending = append(pending, state{r.defaultContext(i), file.bucket})
 		}
 	}
 	seen := map[state]bool{}
+	sourceFiles, testFiles := map[int]bool{}, map[int]bool{}
+	warnings := map[string]bool{}
 	propagate := func() {
 		for len(pending) > 0 {
 			current := pending[len(pending)-1]
 			pending = pending[:len(pending)-1]
-			file := files[current.file]
+			file := r.files[current.context.file]
 			if file.bucket == model.Tests || file.result.TestOnly {
 				current.bucket = model.Tests
 			}
@@ -70,7 +102,15 @@ func classifyRustModules(files []analyzedFile, ignored, packages map[string]bool
 				continue
 			}
 			seen[current] = true
-			for _, edge := range r.edges[current.file] {
+			if current.bucket == model.Tests {
+				testFiles[current.context.file] = true
+			} else {
+				sourceFiles[current.context.file] = true
+			}
+			for _, warning := range r.warnings[current.context] {
+				warnings[warning] = true
+			}
+			for _, edge := range r.edges[current.context] {
 				bucket := current.bucket
 				if edge.testOnly {
 					bucket = model.Tests
@@ -83,21 +123,26 @@ func classifyRustModules(files []analyzedFile, ignored, packages map[string]bool
 		}
 	}
 	propagate()
-	for i, file := range files {
-		if file.analysis.language == "rust" && !seen[state{i, model.Source}] && !seen[state{i, model.Tests}] {
-			pending = append(pending, state{i, model.Source})
+	for i, file := range r.files {
+		if file.analysis.language == "rust" && !sourceFiles[i] && !testFiles[i] {
+			pending = append(pending, state{r.defaultContext(i), model.Source})
 		}
 	}
 	propagate()
-	for i := range files {
-		if seen[state{i, model.Tests}] && !seen[state{i, model.Source}] {
-			files[i].bucket = model.Tests
+	for i := range r.files {
+		if testFiles[i] && !sourceFiles[i] {
+			r.files[i].bucket = model.Tests
 		}
 	}
-	return r.warnings
+	result := make([]string, 0, len(warnings))
+	for warning := range warnings {
+		result = append(result, warning)
+	}
+	sort.Strings(result)
+	return result
 }
 
-func (r *moduleResolver) resolve(from int, modules []lang.Module, moduleDir, attributeDir string, testOnly, uncertain bool) {
+func (r *moduleResolver) resolve(from moduleContext, modules []lang.Module, moduleDir, attributeDir string, testOnly, uncertain bool) {
 	for _, module := range modules {
 		test := testOnly || module.TestOnly
 		unknown := uncertain || module.Uncertain
@@ -119,7 +164,7 @@ func (r *moduleResolver) resolve(from int, modules []lang.Module, moduleDir, att
 			}
 		}
 		if module.Uncertain {
-			r.warnings = append(r.warnings, fmt.Sprintf("Rust module %s in %s: conditional or unsupported path; possible targets retain source scope", module.Name, r.files[from].blob.Path))
+			r.warnings[from] = append(r.warnings[from], fmt.Sprintf("Rust module %s in %s: conditional or unsupported path; possible targets retain source scope", module.Name, r.files[from.file].blob.Path))
 		}
 		if module.Inline {
 			if module.Path == nil {
@@ -130,25 +175,27 @@ func (r *moduleResolver) resolve(from int, modules []lang.Module, moduleDir, att
 			}
 			continue
 		}
+		explicitPaths := len(paths)
 		if module.Path == nil {
 			paths = append(paths, path.Join(moduleDir, module.Name+".rs"), path.Join(moduleDir, module.Name, "mod.rs"))
 		}
-		var targets []int
-		for _, file := range paths {
+		var targets []moduleContext
+		for i, file := range paths {
 			if target, ok := r.index[file]; ok && !strings.HasPrefix(file, "../") && !path.IsAbs(file) {
-				targets = append(targets, target)
+				targets = append(targets, moduleContext{target, rustModuleDirectory(file, i < explicitPaths)})
 			}
 		}
 		if len(targets) == 0 && !r.intentionallyOmitted(paths) {
-			r.warnings = append(r.warnings, fmt.Sprintf("Rust module %s in %s: no analyzed target among %q", module.Name, r.files[from].blob.Path, paths))
+			r.warnings[from] = append(r.warnings[from], fmt.Sprintf("Rust module %s in %s: no analyzed target among %q", module.Name, r.files[from.file].blob.Path, paths))
 		}
 		if len(targets) > 1 && !unknown {
 			unknown = true
-			r.warnings = append(r.warnings, fmt.Sprintf("Rust module %s in %s: multiple analyzed targets among %q; retaining source scope", module.Name, r.files[from].blob.Path, paths))
+			r.warnings[from] = append(r.warnings[from], fmt.Sprintf("Rust module %s in %s: multiple analyzed targets among %q; retaining source scope", module.Name, r.files[from.file].blob.Path, paths))
 		}
 		for _, to := range targets {
 			r.edges[from] = append(r.edges[from], moduleEdge{to: to, testOnly: test, uncertain: unknown})
-			r.incoming[to] = true
+			r.incoming[to.file] = true
+			r.pending = append(r.pending, to)
 		}
 	}
 }
@@ -161,8 +208,8 @@ func snapshotModulePath(base, name string) (string, bool) {
 	return target, target != ".." && !strings.HasPrefix(target, "../")
 }
 
-func (r *moduleResolver) invalidPath(from int, module, name string) {
-	r.warnings = append(r.warnings, fmt.Sprintf("Rust module %s in %s: path %q is outside the analyzed snapshot or invalid", module, r.files[from].blob.Path, name))
+func (r *moduleResolver) invalidPath(from moduleContext, module, name string) {
+	r.warnings[from] = append(r.warnings[from], fmt.Sprintf("Rust module %s in %s: path %q is outside the analyzed snapshot or invalid", module, r.files[from.file].blob.Path, name))
 }
 
 func (r *moduleResolver) crateRoot(file string) bool {
