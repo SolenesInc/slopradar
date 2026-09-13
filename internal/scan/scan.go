@@ -34,15 +34,11 @@ func Directory(root string) (model.Snapshot, error) {
 	}
 	skipped := []model.SkippedFile{}
 	filter := func(file string, size int64, directory bool) bool {
-		classificationPath := file
 		if directory {
-			classificationPath += "/file"
+			return !model.ExcludedDirectory(file, config.Excludes)
 		}
-		if model.Classify(classificationPath, nil, config).Excluded {
+		if model.Classify(file, nil, config).Excluded {
 			return false
-		}
-		if directory {
-			return true
 		}
 		if _, ok := analyzerFor(file); !ok {
 			return false
@@ -151,6 +147,9 @@ func blobsWithConfig(rev string, blobs []gitread.Blob, config model.Config, skip
 		}
 		snapshot.Warnings = append(snapshot.Warnings, result.Warnings...)
 		sourceLines := lang.SourceLines(blob.Content, result.Comments, result.TestSpans)
+		if analyze.language == "typescript" {
+			sourceLines = lang.JavaScriptSourceLines(blob.Content, result.Comments, result.TestSpans)
+		}
 		if classification.Bucket == model.Tests {
 			sourceLines[model.Tests] = append(sourceLines[model.Tests], sourceLines[model.Source]...)
 			sort.Ints(sourceLines[model.Tests])

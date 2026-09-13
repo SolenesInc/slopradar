@@ -164,10 +164,30 @@ func CountLines(source []byte, comments, testSpans []Span) map[model.Bucket]int 
 }
 
 func SourceLines(source []byte, comments, testSpans []Span) map[model.Bucket][]int {
+	return sourceLines(source, comments, testSpans, false)
+}
+
+func JavaScriptSourceLines(source []byte, comments, testSpans []Span) map[model.Bucket][]int {
+	return sourceLines(source, comments, testSpans, true)
+}
+
+func sourceLines(source []byte, comments, testSpans []Span, javascript bool) map[model.Bucket][]int {
 	content := append([]byte(nil), source...)
+	lineBreaks := make([]bool, len(content))
+	for offset := 0; offset < len(content); {
+		width := lineTerminatorWidth(content, offset, javascript)
+		if width == 0 {
+			offset++
+			continue
+		}
+		for i := range width {
+			lineBreaks[offset+i] = true
+		}
+		offset += width
+	}
 	for _, comment := range comments {
 		for i := comment.StartByte; i < comment.EndByte; i++ {
-			if content[i] != '\n' && content[i] != '\r' {
+			if !lineBreaks[i] {
 				content[i] = ' '
 			}
 		}
@@ -176,12 +196,7 @@ func SourceLines(source []byte, comments, testSpans []Span) map[model.Bucket][]i
 	lineStart := 0
 	lineNumber := 1
 	for lineStart <= len(content) {
-		lineEnd := bytes.IndexByte(content[lineStart:], '\n')
-		if lineEnd < 0 {
-			lineEnd = len(content)
-		} else {
-			lineEnd += lineStart
-		}
+		lineEnd, terminatorWidth := nextLineTerminator(content, lineStart, javascript)
 		if len(bytes.TrimSpace(content[lineStart:lineEnd])) != 0 {
 			bucket := model.Source
 			for _, span := range testSpans {
@@ -192,11 +207,37 @@ func SourceLines(source []byte, comments, testSpans []Span) map[model.Bucket][]i
 			}
 			lines[bucket] = append(lines[bucket], lineNumber)
 		}
-		if lineEnd == len(content) {
+		if terminatorWidth == 0 {
 			break
 		}
-		lineStart = lineEnd + 1
+		lineStart = lineEnd + terminatorWidth
 		lineNumber++
 	}
 	return lines
+}
+
+func nextLineTerminator(content []byte, start int, javascript bool) (int, int) {
+	for offset := start; offset < len(content); offset++ {
+		if width := lineTerminatorWidth(content, offset, javascript); width != 0 {
+			return offset, width
+		}
+	}
+	return len(content), 0
+}
+
+func lineTerminatorWidth(content []byte, offset int, javascript bool) int {
+	switch content[offset] {
+	case '\n':
+		return 1
+	case '\r':
+		if offset+1 < len(content) && content[offset+1] == '\n' {
+			return 2
+		}
+		return 1
+	case 0xe2:
+		if javascript && offset+2 < len(content) && content[offset+1] == 0x80 && (content[offset+2] == 0xa8 || content[offset+2] == 0xa9) {
+			return 3
+		}
+	}
+	return 0
 }

@@ -66,6 +66,10 @@ their source modifiers. Named class expressions use their internal name,
 assignment-owned anonymous expressions use the assignment or property name,
 and otherwise the owner remains `(anonymous class)`.
 
+JavaScript line accounting recognizes LF, CRLF, CR, U+2028 and U+2029.
+Comment removal preserves those terminators, so function lines, SLOC, token
+lines and clone coverage share the same source coordinates.
+
 The Rust dependency graph and source checksums are pinned in `Cargo.lock`.
 Oxc's upstream notice is preserved in [LICENSE-OXC](LICENSE-OXC). The checked-in
 [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt) maps every locked crate and

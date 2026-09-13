@@ -72,6 +72,22 @@ func Classify(file string, content []byte, config Config) Classification {
 	return classification
 }
 
+func ExcludedDirectory(directory string, additions []string) bool {
+	directory = path.Clean(strings.TrimPrefix(directory, "./"))
+	for _, part := range strings.Split(directory, "/") {
+		if strings.HasPrefix(part, ".") || part == "vendor" || part == "node_modules" || part == "dist" || part == "target" {
+			return true
+		}
+	}
+	for _, pattern := range additions {
+		pattern = strings.TrimPrefix(pattern, "./")
+		if strings.HasSuffix(pattern, "/") && strings.HasPrefix(directory+"/", pattern) {
+			return true
+		}
+	}
+	return false
+}
+
 func excluded(file string, additions []string) bool {
 	extension := strings.ToLower(path.Ext(file))
 	parts := strings.Split(file, "/")

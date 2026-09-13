@@ -221,6 +221,46 @@ class Outer {
 	}
 }
 
+func TestAnalyzeRecognizesJavaScriptLineTerminators(t *testing.T) {
+	terminators := []struct {
+		name string
+		text string
+	}{
+		{name: "lf", text: "\n"},
+		{name: "crlf", text: "\r\n"},
+		{name: "cr", text: "\r"},
+		{name: "line separator", text: "\u2028"},
+		{name: "paragraph separator", text: "\u2029"},
+	}
+	for _, terminator := range terminators {
+		t.Run(terminator.name, func(t *testing.T) {
+			source := strings.Join([]string{
+				"function f(x) {",
+				"  // removed comment",
+				"  if (x) return 1;",
+				"  return 0;",
+				"}",
+			}, terminator.text)
+			result, err := Analyze("lines.js", []byte(source))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.Functions) != 1 || result.Functions[0].Line != 1 || result.Functions[0].SLOC != 4 {
+				t.Fatalf("functions = %#v", result.Functions)
+			}
+			if len(result.Comments) != 1 || result.Comments[0].StartLine != 2 || result.Comments[0].EndLine != 2 {
+				t.Fatalf("comments = %#v", result.Comments)
+			}
+			wantTokenLines := map[string]int{"if": 3, "0": 4}
+			for _, token := range result.Tokens {
+				if want, ok := wantTokenLines[token.Text]; ok && token.Line != want {
+					t.Fatalf("token = %#v, want line %d", token, want)
+				}
+			}
+		})
+	}
+}
+
 func TestClassOwnershipKeepsDiffOnChangedMethod(t *testing.T) {
 	base := analyzeSnapshot(t, "base", `
 class A {

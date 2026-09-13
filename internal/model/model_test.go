@@ -53,6 +53,27 @@ func TestClassifyPreservesUnixBackslashesAndGlobEscapes(t *testing.T) {
 	}
 }
 
+func TestExcludedDirectoryUsesOnlyStructuralRules(t *testing.T) {
+	if ExcludedDirectory("src", []string{"src/f*"}) {
+		t.Fatal("file glob excluded a directory with possible included descendants")
+	}
+	for _, test := range []struct {
+		directory string
+		config    Config
+	}{
+		{directory: "src/node_modules"},
+		{directory: "src/.generated"},
+		{directory: "src/nested", config: Config{Excludes: []string{"src/"}}},
+	} {
+		if !ExcludedDirectory(test.directory, test.config.Excludes) {
+			t.Errorf("directory %q was not excluded", test.directory)
+		}
+	}
+	if ExcludedDirectory("testdata", nil) {
+		t.Fatal("testdata directory excluded before descendant languages are known")
+	}
+}
+
 func TestClassifyLimitsBuiltInTestdataExclusionToGo(t *testing.T) {
 	for _, file := range []string{"testdata/helper.go", "src/testdata/helper.GO"} {
 		if got := Classify(file, nil, Config{}); !got.Excluded {

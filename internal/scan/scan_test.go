@@ -81,6 +81,34 @@ func TestDirectoryFiltersBeforeReadingContent(t *testing.T) {
 	}
 }
 
+func TestDirectoryAndRevisionApplyFileGlobsOnlyToFiles(t *testing.T) {
+	dir := t.TempDir()
+	gitForScan(t, dir, "init", "-b", "main")
+	gitForScan(t, dir, "config", "user.name", "Slopradar Test")
+	gitForScan(t, dir, "config", "user.email", "test@slopradar.invalid")
+	if err := os.MkdirAll(filepath.Join(dir, "src", "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeScanFile(t, dir, filepath.Join("src", "nested", "a.go"), "package a\n\nfunc A() {}\n")
+	writeScanFile(t, dir, model.ConfigFile, `{"excludes":["src/f*"]}`)
+
+	directory, err := Directory(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gitForScan(t, dir, "add", ".")
+	gitForScan(t, dir, "commit", "-m", "fixture")
+	revision, err := Revision(context.Background(), dir, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for label, snapshot := range map[string]model.Snapshot{"directory": directory, "revision": revision} {
+		if len(snapshot.Functions) != 1 || snapshot.Functions[0].File != "src/nested/a.go" || snapshot.Functions[0].Name != "A" {
+			t.Fatalf("%s functions = %#v", label, snapshot.Functions)
+		}
+	}
+}
+
 func TestDirectoryLimitsBuiltInTestdataExclusionToGo(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Mkdir(filepath.Join(dir, "testdata"), 0o755); err != nil {
@@ -348,7 +376,6 @@ func TestBlobsPreservesMixedRustCloneCoverage(t *testing.T) {
     let zeta = epsilon * 506;
     zeta
 }
-
 #[cfg(test)]
 mod tests {
     fn fixture(value: i32) -> i32 {
@@ -377,5 +404,43 @@ mod tests {
 	}
 	if len(snapshot.CloneCoverage) != 4 || snapshot.CloneCoverage[0].Bucket != model.Source || snapshot.CloneCoverage[1].Bucket != model.Tests {
 		t.Fatalf("clone coverage = %#v", snapshot.CloneCoverage)
+	}
+}
+
+func TestJavaScriptLineTerminatorsPreserveCloneCoverage(t *testing.T) {
+	terminators := []struct {
+		name string
+		text string
+	}{
+		{name: "lf", text: "\n"},
+		{name: "crlf", text: "\r\n"},
+		{name: "cr", text: "\r"},
+		{name: "line separator", text: "\u2028"},
+		{name: "paragraph separator", text: "\u2029"},
+	}
+	for _, terminator := range terminators {
+		t.Run(terminator.name, func(t *testing.T) {
+			source := []byte(strings.Join([]string{
+				"function repeated(input) {",
+				"  const alpha = input + 1 + 2 + 3 + 4 + 5;",
+				"  const beta = alpha + 6 + 7 + 8 + 9 + 10;",
+				"  // removed comment",
+				"  const gamma = beta + 11 + 12 + 13 + 14 + 15;",
+				"  if (gamma > input) return gamma;",
+				"  return input;",
+				"}",
+			}, terminator.text))
+			snapshot, err := Blobs("lines", []gitread.Blob{
+				{BlobInfo: gitread.BlobInfo{Path: "a.js", Size: int64(len(source))}, Content: source},
+				{BlobInfo: gitread.BlobInfo{Path: "b.js", Size: int64(len(source))}, Content: source},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			totals := snapshot.Buckets[model.Source]
+			if totals.SourceLines != 14 || totals.CloneLines != 14 || len(snapshot.Clones) != 1 {
+				t.Fatalf("snapshot = %#v", snapshot)
+			}
+		})
 	}
 }

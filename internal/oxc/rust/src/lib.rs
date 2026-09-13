@@ -240,8 +240,32 @@ fn analyze_source(file: &str, source: &str) -> Analysis {
 
 fn line_starts(source: &str) -> Vec<usize> {
     let mut starts = vec![0];
-    starts.extend(source.match_indices('\n').map(|(index, _)| index + 1));
+    let bytes = source.as_bytes();
+    let mut offset = 0;
+    while offset < bytes.len() {
+        let width = line_terminator_width(bytes, offset);
+        if width == 0 {
+            offset += 1;
+        } else {
+            offset += width;
+            starts.push(offset);
+        }
+    }
     starts
+}
+
+fn line_terminator_width(source: &[u8], offset: usize) -> usize {
+    match source[offset] {
+        b'\n' => 1,
+        b'\r' if source.get(offset + 1) == Some(&b'\n') => 2,
+        b'\r' => 1,
+        0xe2 if source.get(offset + 1) == Some(&0x80)
+            && matches!(source.get(offset + 2), Some(0xa8 | 0xa9)) =>
+        {
+            3
+        }
+        _ => 0,
+    }
 }
 
 fn line_of(byte: usize, starts: &[usize]) -> usize {
@@ -260,16 +284,35 @@ fn source_range(span: Span, starts: &[usize]) -> SourceRange {
 fn code_lines(source: &str, comments: &[Comment]) -> Vec<bool> {
     let mut bytes = source.as_bytes().to_vec();
     for comment in comments {
-        for byte in &mut bytes[comment.span.start as usize..comment.span.end as usize] {
-            if *byte != b'\n' && *byte != b'\r' {
-                *byte = b' ';
+        let mut offset = comment.span.start as usize;
+        while offset < comment.span.end as usize {
+            let width = line_terminator_width(&bytes, offset);
+            if width == 0 {
+                bytes[offset] = b' ';
+                offset += 1;
+            } else {
+                offset += width;
             }
         }
     }
-    bytes
-        .split(|byte| *byte == b'\n')
-        .map(|line| line.iter().any(|byte| !byte.is_ascii_whitespace()))
-        .collect()
+    let mut lines = Vec::new();
+    let mut line_start = 0;
+    loop {
+        let mut line_end = line_start;
+        while line_end < bytes.len() && line_terminator_width(&bytes, line_end) == 0 {
+            line_end += 1;
+        }
+        lines.push(
+            bytes[line_start..line_end]
+                .iter()
+                .any(|byte| !byte.is_ascii_whitespace()),
+        );
+        if line_end == bytes.len() {
+            break;
+        }
+        line_start = line_end + line_terminator_width(&bytes, line_end);
+    }
+    lines
 }
 
 struct FunctionFrame {
@@ -629,6 +672,47 @@ mod tests {
         assert_eq!(analysis.functions[4].nested[0].name, "(anonymous)");
         assert_eq!(analysis.functions[9].nested[0].name, "Inner.run");
         assert_eq!(analysis.functions[9].nested[1].name, "(anonymous)");
+    }
+
+    #[test]
+    fn recognizes_javascript_line_terminators() {
+        for terminator in ["\n", "\r\n", "\r", "\u{2028}", "\u{2029}"] {
+            let source = [
+                "function f(x) {",
+                "  // removed comment",
+                "  if (x) return 1;",
+                "  return 0;",
+                "}",
+            ]
+            .join(terminator);
+            let analysis = analyze_source("valid.js", &source);
+            assert_eq!(analysis.status, Status::Ok, "terminator {terminator:?}");
+            assert_eq!(analysis.functions.len(), 1, "terminator {terminator:?}");
+            assert_eq!(analysis.functions[0].line, 1, "terminator {terminator:?}");
+            assert_eq!(analysis.functions[0].sloc, 4, "terminator {terminator:?}");
+            assert_eq!(
+                analysis.comments[0].start_line, 2,
+                "terminator {terminator:?}"
+            );
+            assert_eq!(
+                analysis.comments[0].end_line, 2,
+                "terminator {terminator:?}"
+            );
+            assert!(
+                analysis
+                    .tokens
+                    .iter()
+                    .any(|token| token.text == "if" && token.line == 3),
+                "terminator {terminator:?}"
+            );
+            assert!(
+                analysis
+                    .tokens
+                    .iter()
+                    .any(|token| token.text == "0" && token.line == 4),
+                "terminator {terminator:?}"
+            );
+        }
     }
 
     #[test]
