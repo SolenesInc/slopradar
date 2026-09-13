@@ -13,7 +13,7 @@ silently replacing these numbers.
 
 Install Git, Go 1.27.1, `jq`, `rsync`, and a C compiler. The recorded binary was
 built with `go1.27.1 darwin/arm64`; its SHA-256 checksum is
-`eddf1dd8ff7c3941e5bc57f388c97be55b42ef0a1c3480d2ca234abce675d4eb`.
+`4d2983c5d181bd92799047f762f3f9a2042bc4a1c4d42abdcce06a879f572a50`.
 Network access is required to fetch the pinned inputs.
 
 Start in an empty temporary directory:
@@ -21,7 +21,7 @@ Start in an empty temporary directory:
 ```sh
 baseline_root=$(mktemp -d)
 git clone https://github.com/SolenesInc/slopradar.git "$baseline_root/slopradar"
-git -C "$baseline_root/slopradar" checkout --detach 6d64189b74f0c751217ef73cd7920b856c301b1a
+git -C "$baseline_root/slopradar" checkout --detach 6b991ce2b36aa0f6d2c488028943747cf09bf22b
 go -C "$baseline_root/slopradar" build -o "$baseline_root/slopradar-bin" ./cmd/slopradar
 ```
 

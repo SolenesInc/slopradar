@@ -162,7 +162,7 @@ rows; totals still include only top-level functions.
 ## Baselines
 
 These are source-bucket erosion measurements made with the shipped CLI at
-commit `6d64189`, using Go `1.27.1` and `--no-cache`. Each row is restricted to
+commit `6b991ce`, using Go `1.27.1` and `--no-cache`. Each row is restricted to
 the stated language and path because erosion is language-bound. The adjacent
 prototype value is the expectation recorded before the production parsers were
 integrated.

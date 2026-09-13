@@ -1,10 +1,11 @@
 {
-  "measured_at": "2026-09-13",
+  "measured_at": "2026-09-13T11:33:40.592154+00:00",
   "tool": {
-    "commit": "6d64189b74f0c751217ef73cd7920b856c301b1a",
+    "commit": "6b991ce2b36aa0f6d2c488028943747cf09bf22b",
     "go_version": "go1.27.1 darwin/arm64",
-    "command": "go build -o /private/tmp/slopradar-go127-final ./cmd/slopradar",
-    "binary_sha256": "eddf1dd8ff7c3941e5bc57f388c97be55b42ef0a1c3480d2ca234abce675d4eb"
+    "command": "go build -o /private/tmp/slopradar-final-integrated ./cmd/slopradar",
+    "binary_sha256": "4d2983c5d181bd92799047f762f3f9a2042bc4a1c4d42abdcce06a879f572a50",
+    "vcs_modified": false
   },
   "metric": "source-bucket erosion, filtered to the stated language extensions",
   "reproduction": "baselines.md",
@@ -23,7 +24,7 @@
       "revision": "go1.27.1",
       "scope": "$GOROOT/src, .go source bucket",
       "input": "/private/tmp/slopradar-baselines/go1.27.1-src",
-      "command": "/private/tmp/slopradar-go127-final scan --no-cache --format=json /private/tmp/slopradar-baselines/go1.27.1-src | jq '[.functions[] | select(.bucket == \"source\" and (.file | endswith(\".go\")))] as $f | (($f | map(select(.cc > 10) | .mass) | add) / ($f | map(.mass) | add))'",
+      "command": "/private/tmp/slopradar-final-integrated scan --no-cache --format=json /private/tmp/slopradar-baselines/go1.27.1-src | jq '[.functions[] | select(.bucket == \"source\" and (.file | endswith(\".go\")))] as $f | (($f | map(select(.cc > 10) | .mass) | add) / ($f | map(.mass) | add))'",
       "functions": 39587,
       "mass": 1232329.9614500774,
       "mass_over_cc_10": 913012.194782836,
@@ -51,14 +52,16 @@
       "module_sum": "h1:3NI7VXzL9+1WZD52Dx2ttoPwD5DWrFGpl9mFZDlmisI=",
       "scope": "module root, .go source bucket",
       "input": "/private/tmp/slopradar-baselines/tools",
-      "command": "/private/tmp/slopradar-go127-final scan --no-cache --format=json /private/tmp/slopradar-baselines/tools | jq '[.functions[] | select(.bucket == \"source\" and (.file | endswith(\".go\")))] as $f | (($f | map(select(.cc > 10) | .mass) | add) / ($f | map(.mass) | add))'",
+      "command": "/private/tmp/slopradar-final-integrated scan --no-cache --format=json /private/tmp/slopradar-baselines/tools | jq '[.functions[] | select(.bucket == \"source\" and (.file | endswith(\".go\")))] as $f | (($f | map(select(.cc > 10) | .mass) | add) / ($f | map(.mass) | add))'",
       "functions": 4104,
       "mass": 147289.4408640726,
       "mass_over_cc_10": 106203.42747727106,
       "erosion": 0.7210525537623697,
       "prototype_erosion_reported": 0.722,
       "difference_from_reported": -0.0009474462376303228,
-      "receipt": "Historical receipt 0.7270964284200546 combined all 4137 source functions despite its Go-filtered command. The same old binary yields 4086 Go functions and 0.7222621700849018. Restoring Go-specific test classification adds 18 production functions in go/analysis/passes/tests/tests.go as source, yielding 4104 Go functions; all existing Go function CC/SLOC/mass remain unchanged. The prototype separately used FuncDecl rows and approximated comments line by line."
+      "receipt": "Historical receipt 0.7270964284200546 combined all 4137 source functions despite its Go-filtered command. The same old binary yields 4086 Go functions and 0.7222621700849018. Restoring Go-specific test classification adds 18 production functions in go/analysis/passes/tests/tests.go as source, yielding 4104 Go functions; all existing Go function CC/SLOC/mass remain unchanged. The prototype separately used FuncDecl rows and approximated comments line by line.",
+      "warnings": [],
+      "skipped_details": null
     },
     {
       "corpus": "honnef.co/go/tools",
@@ -66,21 +69,23 @@
       "module_sum": "h1:+JKf3xJ1ni4CwrhVg4/pqsfPGP6vNAXcKbMXJodYx3w=",
       "scope": "module root, .go source bucket",
       "input": "/private/tmp/slopradar-baselines/staticcheck",
-      "command": "/private/tmp/slopradar-go127-final scan --no-cache --format=json /private/tmp/slopradar-baselines/staticcheck | jq '[.functions[] | select(.bucket == \"source\" and (.file | endswith(\".go\")))] as $f | (($f | map(select(.cc > 10) | .mass) | add) / ($f | map(.mass) | add))'",
+      "command": "/private/tmp/slopradar-final-integrated scan --no-cache --format=json /private/tmp/slopradar-baselines/staticcheck | jq '[.functions[] | select(.bucket == \"source\" and (.file | endswith(\".go\")))] as $f | (($f | map(select(.cc > 10) | .mass) | add) / ($f | map(.mass) | add))'",
       "functions": 1832,
       "mass": 65486.471622171,
       "mass_over_cc_10": 48978.9370867603,
       "erosion": 0.7479245082762722,
       "prototype_erosion_reported": 0.749,
       "difference_from_reported": -0.001075491723727784,
-      "receipt": "Shipped parser includes module-level closures and parsed-comment SLOC semantics; the prototype walked FuncDecl rows and approximated comments line by line."
+      "receipt": "Shipped parser includes module-level closures and parsed-comment SLOC semantics; the prototype walked FuncDecl rows and approximated comments line by line.",
+      "warnings": [],
+      "skipped_details": null
     },
     {
       "corpus": "net/http",
       "revision": "go1.27.1",
       "scope": "$GOROOT/src/net/http recursively, .go source bucket",
       "input": "/private/tmp/slopradar-baselines/go1.27.1-src/net/http",
-      "command": "/private/tmp/slopradar-go127-final scan --no-cache --format=json /private/tmp/slopradar-baselines/go1.27.1-src/net/http | jq '[.functions[] | select(.bucket == \"source\" and (.file | endswith(\".go\")))] as $f | (($f | map(select(.cc > 10) | .mass) | add) / ($f | map(.mass) | add))'",
+      "command": "/private/tmp/slopradar-final-integrated scan --no-cache --format=json /private/tmp/slopradar-baselines/go1.27.1-src/net/http | jq '[.functions[] | select(.bucket == \"source\" and (.file | endswith(\".go\")))] as $f | (($f | map(select(.cc > 10) | .mass) | add) / ($f | map(.mass) | add))'",
       "functions": 1419,
       "mass": 33327.184738609314,
       "mass_over_cc_10": 19601.320904293563,
@@ -88,21 +93,24 @@
       "prototype_erosion_reported": 0.589,
       "difference_from_reported": -0.0008518843391662756,
       "warnings": [],
-      "receipt": "The Go 1.27 standard parser accepts generalized new expressions in internal/http2/server.go. Separate intentional differences remain: the shipped analyzer includes module-level closures and parsed-comment SLOC semantics."
+      "receipt": "The Go 1.27 standard parser accepts generalized new expressions in internal/http2/server.go. Separate intentional differences remain: the shipped analyzer includes module-level closures and parsed-comment SLOC semantics.",
+      "skipped_details": null
     },
     {
       "corpus": "os",
       "revision": "go1.27.1",
       "scope": "$GOROOT/src/os recursively, .go source bucket",
       "input": "/private/tmp/slopradar-baselines/go1.27.1-src/os",
-      "command": "/private/tmp/slopradar-go127-final scan --no-cache --format=json /private/tmp/slopradar-baselines/go1.27.1-src/os | jq '[.functions[] | select(.bucket == \"source\" and (.file | endswith(\".go\")))] as $f | (($f | map(select(.cc > 10) | .mass) | add) / ($f | map(.mass) | add))'",
+      "command": "/private/tmp/slopradar-final-integrated scan --no-cache --format=json /private/tmp/slopradar-baselines/go1.27.1-src/os | jq '[.functions[] | select(.bucket == \"source\" and (.file | endswith(\".go\")))] as $f | (($f | map(select(.cc > 10) | .mass) | add) / ($f | map(.mass) | add))'",
       "functions": 831,
       "mass": 13049.373055155065,
       "mass_over_cc_10": 6208.297312723758,
       "erosion": 0.475754450921396,
       "prototype_erosion_reported": 0.477,
       "difference_from_reported": -0.0012455490786039691,
-      "receipt": "Shipped parser includes module-level closures and parsed-comment SLOC semantics; the prototype walked FuncDecl rows and approximated comments line by line."
+      "receipt": "Shipped parser includes module-level closures and parsed-comment SLOC semantics; the prototype walked FuncDecl rows and approximated comments line by line.",
+      "warnings": [],
+      "skipped_details": null
     },
     {
       "corpus": "attn Go",
@@ -110,14 +118,16 @@
       "scope": "cmd and internal, .go source bucket; cmd/prompt-editor/test classified as tests",
       "input": "/private/tmp/slopradar-readme-baselines.IK6U8m/attn-go-e055",
       "input_archive_sha256": "f90b8c7b987ece9da6240a3b77ea77b3086a433a3eb69bb8d39eb1afb45a5255",
-      "command": "/private/tmp/slopradar-go127-final scan --no-cache --format=json /private/tmp/slopradar-readme-baselines.IK6U8m/attn-go-e055 | jq '[.functions[] | select(.bucket == \"source\" and (.file | endswith(\".go\")))] as $f | (($f | map(select(.cc > 10) | .mass) | add) / ($f | map(.mass) | add))'",
+      "command": "/private/tmp/slopradar-final-integrated scan --no-cache --format=json /private/tmp/slopradar-readme-baselines.IK6U8m/attn-go-e055 | jq '[.functions[] | select(.bucket == \"source\" and (.file | endswith(\".go\")))] as $f | (($f | map(select(.cc > 10) | .mass) | add) / ($f | map(.mass) | add))'",
       "functions": 6649,
       "mass": 216007.85276061416,
       "mass_over_cc_10": 128048.82813439601,
       "erosion": 0.5927970974106356,
       "prototype_erosion": 0.59285762135,
-      "difference": -6.052393936439837e-05,
-      "receipt": "All 6645 declared-function CC values match the Go AST prototype; four shipped module-level closures and parsed-comment SLOC differences account for the remaining row and mass differences."
+      "difference": -6.0523939364398593e-05,
+      "receipt": "All 6645 declared-function CC values match the Go AST prototype; four shipped module-level closures and parsed-comment SLOC differences account for the remaining row and mass differences.",
+      "warnings": [],
+      "skipped_details": null
     },
     {
       "corpus": "zod",
@@ -125,14 +135,16 @@
       "archive_sha256": "b41d80e5c859df6d8a68a477e4b9ed2303b26ea80f1803570eb726e26acec5ec",
       "scope": "packages/zod/src, .ts and .tsx source bucket, declaration files omitted",
       "input": "/private/tmp/slopradar-readme-baselines.IK6U8m/zod",
-      "command": "/private/tmp/slopradar-go127-final scan --no-cache --format=json /private/tmp/slopradar-readme-baselines.IK6U8m/zod | jq '[.functions[] | select(.bucket == \"source\" and (.file | test(\"\\\\.(ts|tsx)$\")))] as $f | (($f | map(select(.cc > 10) | .mass) | add) / ($f | map(.mass) | add))'",
+      "command": "/private/tmp/slopradar-final-integrated scan --no-cache --format=json /private/tmp/slopradar-readme-baselines.IK6U8m/zod | jq '[.functions[] | select(.bucket == \"source\" and (.file | test(\"\\\\.(ts|tsx)$\")))] as $f | (($f | map(select(.cc > 10) | .mass) | add) / ($f | map(.mass) | add))'",
       "functions": 1700,
       "mass": 44811.70714936995,
       "mass_over_cc_10": 36035.96829308454,
       "erosion": 0.8041641478412456,
       "prototype_erosion_reported": 0.805,
       "difference_from_reported": -0.0008358521587544798,
-      "receipt": "Oxc metrics are unchanged by class-owner naming and test-directory corrections. packages/zod/src/v3/tests/Mocker.ts now correctly follows TypeScript defaults as source; the old global tests/ convention classified it as tests. The prototype used the TypeScript compiler."
+      "receipt": "Oxc metrics are unchanged by class-owner naming and test-directory corrections. packages/zod/src/v3/tests/Mocker.ts now correctly follows TypeScript defaults as source; the old global tests/ convention classified it as tests. The prototype used the TypeScript compiler.",
+      "warnings": [],
+      "skipped_details": null
     },
     {
       "corpus": "vitest",
@@ -140,14 +152,16 @@
       "archive_sha256": "e595da491a06c9f8cd4c42d5cfafbe698a1ea6ace16f435c59320beeab2bb712",
       "scope": "packages, .ts and .tsx source bucket, declaration files omitted",
       "input": "/private/tmp/slopradar-readme-baselines.IK6U8m/vitest-prototype-scope",
-      "command": "/private/tmp/slopradar-go127-final scan --no-cache --format=json /private/tmp/slopradar-readme-baselines.IK6U8m/vitest-prototype-scope | jq '[.functions[] | select(.bucket == \"source\" and (.file | test(\"\\\\.(ts|tsx)$\")))] as $f | (($f | map(select(.cc > 10) | .mass) | add) / ($f | map(.mass) | add))'",
+      "command": "/private/tmp/slopradar-final-integrated scan --no-cache --format=json /private/tmp/slopradar-readme-baselines.IK6U8m/vitest-prototype-scope | jq '[.functions[] | select(.bucket == \"source\" and (.file | test(\"\\\\.(ts|tsx)$\")))] as $f | (($f | map(select(.cc > 10) | .mass) | add) / ($f | map(.mass) | add))'",
       "functions": 2793,
       "mass": 86446.17547771466,
       "mass_over_cc_10": 56338.552631012644,
       "erosion": 0.6517182781040025,
       "prototype_erosion_reported": 0.652,
-      "difference_from_reported": -0.00028172189599751183,
-      "receipt": "The shipped analyzer uses Oxc; the prototype used the TypeScript compiler and excluded .d.ts. The comparable receipt scope retains that declaration-file omission."
+      "difference_from_reported": -0.00028172189599751096,
+      "receipt": "The shipped analyzer uses Oxc; the prototype used the TypeScript compiler and excluded .d.ts. The comparable receipt scope retains that declaration-file omission.",
+      "warnings": [],
+      "skipped_details": null
     },
     {
       "corpus": "excalidraw",
@@ -155,14 +169,16 @@
       "archive_sha256": "cf365b9f653da86c248f4cd30f8bcf6379f166ecea9981af9e17ad14244e9c57",
       "scope": "packages and excalidraw-app, .ts and .tsx source bucket, declaration files omitted",
       "input": "/private/tmp/slopradar-readme-baselines.IK6U8m/excalidraw-prototype-scope",
-      "command": "/private/tmp/slopradar-go127-final scan --no-cache --format=json /private/tmp/slopradar-readme-baselines.IK6U8m/excalidraw-prototype-scope | jq '[.functions[] | select(.bucket == \"source\" and (.file | test(\"\\\\.(ts|tsx)$\")))] as $f | (($f | map(select(.cc > 10) | .mass) | add) / ($f | map(.mass) | add))'",
+      "command": "/private/tmp/slopradar-final-integrated scan --no-cache --format=json /private/tmp/slopradar-readme-baselines.IK6U8m/excalidraw-prototype-scope | jq '[.functions[] | select(.bucket == \"source\" and (.file | test(\"\\\\.(ts|tsx)$\")))] as $f | (($f | map(select(.cc > 10) | .mass) | add) / ($f | map(.mass) | add))'",
       "functions": 2995,
       "mass": 182459.15529271387,
       "mass_over_cc_10": 145014.68275545846,
       "erosion": 0.794778878170381,
       "prototype_erosion_reported": 0.796,
       "difference_from_reported": -0.0012211218296190873,
-      "receipt": "Oxc metrics are unchanged by class-owner naming and test-directory corrections. Nine helper/fixture files under packages/excalidraw/tests/ now follow TypeScript defaults as source; the old global tests/ convention classified them as tests. The prototype used the TypeScript compiler."
+      "receipt": "Oxc metrics are unchanged by class-owner naming and test-directory corrections. Nine helper/fixture files under packages/excalidraw/tests/ now follow TypeScript defaults as source; the old global tests/ convention classified them as tests. The prototype used the TypeScript compiler.",
+      "warnings": [],
+      "skipped_details": null
     },
     {
       "corpus": "attn TypeScript",
@@ -170,14 +186,16 @@
       "scope": "app/src, app/lint, sdk, and plugins; .ts and .tsx source bucket; declaration files and app/src/types/generated.ts omitted",
       "input": "/private/tmp/slopradar-readme-baselines.IK6U8m/attn-ts-e055",
       "input_archive_sha256": "f90b8c7b987ece9da6240a3b77ea77b3086a433a3eb69bb8d39eb1afb45a5255",
-      "command": "/private/tmp/slopradar-go127-final scan --no-cache --format=json /private/tmp/slopradar-readme-baselines.IK6U8m/attn-ts-e055 | jq '[.functions[] | select(.bucket == \"source\" and (.file | test(\"\\\\.(ts|tsx)$\")))] as $f | (($f | map(select(.cc > 10) | .mass) | add) / ($f | map(.mass) | add))'",
+      "command": "/private/tmp/slopradar-final-integrated scan --no-cache --format=json /private/tmp/slopradar-readme-baselines.IK6U8m/attn-ts-e055 | jq '[.functions[] | select(.bucket == \"source\" and (.file | test(\"\\\\.(ts|tsx)$\")))] as $f | (($f | map(select(.cc > 10) | .mass) | add) / ($f | map(.mass) | add))'",
       "functions": 2628,
       "mass": 318168.67343093967,
       "mass_over_cc_10": 290237.56537022314,
       "erosion": 0.9122128908558965,
       "prototype_erosion_reported": 0.912,
-      "difference_from_reported": 0.00021289085589648504,
-      "receipt": "The shipped analyzer uses Oxc; the prototype used the TypeScript compiler. The explicit generated-file exclusion aligns the corpus with the prototype; default scans include unmarked generated output."
+      "difference_from_reported": 0.00021289085589648593,
+      "receipt": "The shipped analyzer uses Oxc; the prototype used the TypeScript compiler. The explicit generated-file exclusion aligns the corpus with the prototype; default scans include unmarked generated output.",
+      "warnings": [],
+      "skipped_details": null
     }
   ]
 }
