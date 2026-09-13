@@ -25,9 +25,10 @@ git -C "$baseline_root/slopradar" checkout --detach 4a25522eb9c0a26068e8ea4060e3
 go -C "$baseline_root/slopradar" build -o "$baseline_root/slopradar-bin" ./cmd/slopradar
 ```
 
-Verify `go version` reports `go1.27.1` before continuing. A different OS or
-architecture produces a different binary checksum but should not change the
-scan output.
+Verify `go version` reports `go1.27.1` before continuing. OS, architecture,
+checkout path and build flags can change the binary checksum; the recorded
+checksum identifies the measured executable. Those environment differences
+should not change the scan output.
 
 ## Fetch the inputs
 
