@@ -75,12 +75,13 @@ type Snapshot struct {
 }
 
 type FunctionDelta struct {
-	File      string    `json:"file"`
-	Name      string    `json:"name"`
-	Before    *Function `json:"before"`
-	After     *Function `json:"after"`
-	DeltaMass float64   `json:"delta_mass"`
-	Note      string    `json:"note"`
+	File      string          `json:"file"`
+	Name      string          `json:"name"`
+	Before    *Function       `json:"before"`
+	After     *Function       `json:"after"`
+	DeltaMass float64         `json:"delta_mass"`
+	Note      string          `json:"note"`
+	Nested    []FunctionDelta `json:"nested,omitempty"`
 }
 
 type BucketDelta struct {

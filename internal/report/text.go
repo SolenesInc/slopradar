@@ -58,10 +58,12 @@ func writeDiffText(output io.Writer, result model.Diff, color bool) error {
 	}
 	w.line("")
 	w.line("functions")
+	if nestedFunctionDeltaCount(result.Functions) != 0 {
+		w.line("nested rows\tindented with > and excluded from headline and bucket totals")
+	}
 	w.line("file\tname\tCC before\tCC after\tSLOC before\tSLOC after\tmass delta\tnote")
 	for _, function := range result.Functions {
-		delta := fmt.Sprintf("%+.3f", function.DeltaMass)
-		w.line("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s", safeText(function.File), safeText(function.Name), metric(function.Before, func(item *model.Function) int { return item.CC }), metric(function.After, func(item *model.Function) int { return item.CC }), metric(function.Before, func(item *model.Function) int { return item.SLOC }), metric(function.After, func(item *model.Function) int { return item.SLOC }), delta, safeText(function.Note))
+		writeTextFunctionDelta(w, function, "")
 	}
 	w.line("")
 	w.line("clone pairs added\t%d", len(result.ClonesAdded))
@@ -100,7 +102,7 @@ func colorDiffText(text string, result model.Diff) string {
 		}
 	}
 	if firstFunction := lineAfter(lines, "file  "); firstFunction >= 0 {
-		for i, function := range result.Functions {
+		for i, function := range flattenFunctionDeltas(result.Functions) {
 			code := ""
 			if function.DeltaMass > 0 {
 				code = "32"
@@ -113,6 +115,23 @@ func colorDiffText(text string, result model.Diff) string {
 		}
 	}
 	return strings.Join(lines, "")
+}
+
+func writeTextFunctionDelta(w *textWriter, function model.FunctionDelta, prefix string) {
+	delta := fmt.Sprintf("%+.3f", function.DeltaMass)
+	w.line("%s\t%s%s\t%s\t%s\t%s\t%s\t%s\t%s", safeText(function.File), prefix, safeText(function.Name), metric(function.Before, func(item *model.Function) int { return item.CC }), metric(function.After, func(item *model.Function) int { return item.CC }), metric(function.Before, func(item *model.Function) int { return item.SLOC }), metric(function.After, func(item *model.Function) int { return item.SLOC }), delta, safeText(function.Note))
+	for _, nested := range function.Nested {
+		writeTextFunctionDelta(w, nested, ">"+prefix)
+	}
+}
+
+func flattenFunctionDeltas(functions []model.FunctionDelta) []model.FunctionDelta {
+	flattened := []model.FunctionDelta{}
+	for _, function := range functions {
+		flattened = append(flattened, function)
+		flattened = append(flattened, flattenFunctionDeltas(function.Nested)...)
+	}
+	return flattened
 }
 
 func lineAfter(lines []string, prefix string) int {

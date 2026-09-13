@@ -314,6 +314,32 @@ func TestDiffPreservesRepeatedFunctionsWhenOneIsInsertedAndRemoved(t *testing.T)
 	}
 }
 
+func TestDiffReportsNestedFunctionChanges(t *testing.T) {
+	dir := t.TempDir()
+	gitCommand(t, dir, "init", "-b", "main")
+	gitCommand(t, dir, "config", "user.name", "Slopradar Test")
+	gitCommand(t, dir, "config", "user.email", "test@slopradar.invalid")
+	writeFile(t, dir, "nested.go", nestedCallbackSource(false))
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "base")
+	base := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+
+	writeFile(t, dir, "nested.go", nestedCallbackSource(true))
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "change callback")
+	head := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+
+	t.Chdir(dir)
+	got := commandDiff(t, base, head)
+	if len(got.Functions) != 1 || got.Functions[0].Name != "outer" || len(got.Functions[0].Nested) != 1 {
+		t.Fatalf("function deltas = %#v", got.Functions)
+	}
+	nested := got.Functions[0].Nested[0]
+	if nested.Name != "cb:use" || nested.Before.CC != 1 || nested.After.CC != 2 {
+		t.Fatalf("nested delta = %#v", nested)
+	}
+}
+
 func TestDiffReportGoldensFromThrowawayRepository(t *testing.T) {
 	goldenRoot, err := filepath.Abs(filepath.Join("..", "..", "testdata", "report"))
 	if err != nil {
@@ -490,6 +516,14 @@ func init() {
 	if existing() {}
 }
 `
+}
+
+func nestedCallbackSource(complex bool) string {
+	decision := ""
+	if complex {
+		decision = "\t\tif value > 0 { return value }\n"
+	}
+	return "package fixture\n\nfunc outer() {\n\tuse(func(value int) int {\n" + decision + "\t\treturn 0\n\t})\n}\n"
 }
 
 func commandDiff(t *testing.T, base, head string) model.Diff {

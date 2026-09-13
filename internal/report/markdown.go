@@ -37,12 +37,21 @@ func writeDiffMarkdown(output io.Writer, result model.Diff) error {
 	}
 	w.line("")
 	w.line("<details>")
-	w.line("<summary>%d functions changed mass</summary>", len(result.Functions))
+	nestedChanges := nestedFunctionDeltaCount(result.Functions)
+	if nestedChanges == 0 {
+		w.line("<summary>%d functions changed mass</summary>", len(result.Functions))
+	} else {
+		w.line("<summary>%d top-level function changes; %d nested function changes</summary>", len(result.Functions), nestedChanges)
+	}
 	w.line("")
+	if nestedChanges != 0 {
+		w.line("Nested rows are drill-down details and are excluded from headline and bucket totals.")
+		w.line("")
+	}
 	w.line("| function | bucket before → after | CC before → after | SLOC before → after | Δmass | note |")
 	w.line("|---|---|---:|---:|---:|---|")
 	for _, function := range result.Functions {
-		w.line("| <code>%s</code> in <code>%s</code> | %s → %s | %s → %s | %s → %s | %+.3f | %s |", markdownInline(function.Name), markdownInline(function.File), functionBucketMetric(function.Before), functionBucketMetric(function.After), metric(function.Before, func(item *model.Function) int { return item.CC }), metric(function.After, func(item *model.Function) int { return item.CC }), metric(function.Before, func(item *model.Function) int { return item.SLOC }), metric(function.After, func(item *model.Function) int { return item.SLOC }), function.DeltaMass, markdownInline(function.Note))
+		writeMarkdownFunctionDelta(w, function, "")
 	}
 	w.line("")
 	w.line("</details>")
@@ -55,6 +64,21 @@ func writeDiffMarkdown(output io.Writer, result model.Diff) error {
 		writeChart(w, result.Trend)
 	}
 	return w.err
+}
+
+func writeMarkdownFunctionDelta(w *markdownWriter, function model.FunctionDelta, prefix string) {
+	w.line("| <code>%s%s</code> in <code>%s</code> | %s → %s | %s → %s | %s → %s | %+.3f | %s |", prefix, markdownInline(function.Name), markdownInline(function.File), functionBucketMetric(function.Before), functionBucketMetric(function.After), metric(function.Before, func(item *model.Function) int { return item.CC }), metric(function.After, func(item *model.Function) int { return item.CC }), metric(function.Before, func(item *model.Function) int { return item.SLOC }), metric(function.After, func(item *model.Function) int { return item.SLOC }), function.DeltaMass, markdownInline(function.Note))
+	for _, nested := range function.Nested {
+		writeMarkdownFunctionDelta(w, nested, "↳ "+prefix)
+	}
+}
+
+func nestedFunctionDeltaCount(functions []model.FunctionDelta) int {
+	count := 0
+	for _, function := range functions {
+		count += len(function.Nested) + nestedFunctionDeltaCount(function.Nested)
+	}
+	return count
 }
 
 func writeHeadline(w *markdownWriter, result model.Diff) {

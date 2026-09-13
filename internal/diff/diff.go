@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/SolenesInc/slopradar/internal/model"
 )
@@ -43,59 +45,13 @@ func Build(base, head model.Snapshot, touched []string) (model.Diff, error) {
 
 	baseFunctions := groupFunctions(base.Functions, touchedSet)
 	headFunctions := groupFunctions(head.Functions, touchedSet)
-	keys := make([]functionKey, 0, len(baseFunctions)+len(headFunctions))
-	seen := map[functionKey]struct{}{}
-	for key := range baseFunctions {
-		seen[key] = struct{}{}
-		keys = append(keys, key)
-	}
-	for key := range headFunctions {
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		keys = append(keys, key)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		if keys[i].file != keys[j].file {
-			return keys[i].file < keys[j].file
-		}
-		return keys[i].name < keys[j].name
-	})
-	for _, key := range keys {
-		before, after := changedFunctions(baseFunctions[key], headFunctions[key])
-		count := max(len(before), len(after))
-		for i := 0; i < count; i++ {
-			var baseFunction, headFunction *model.Function
-			if i < len(before) {
-				item := before[i]
-				baseFunction = &item
-			}
-			if i < len(after) {
-				item := after[i]
-				headFunction = &item
-			}
-			if equalFunctionMetrics(baseFunction, headFunction) {
-				continue
-			}
-			delta := functionDelta(key, baseFunction, headFunction)
+	for _, key := range functionKeys(baseFunctions, headFunctions) {
+		for _, delta := range functionDeltas(key, baseFunctions[key], headFunctions[key]) {
 			result.Functions = append(result.Functions, delta)
 			addFunctionMass(result.Buckets, delta)
 		}
 	}
-	sort.Slice(result.Functions, func(i, j int) bool {
-		left := math.Abs(result.Functions[i].DeltaMass)
-		right := math.Abs(result.Functions[j].DeltaMass)
-		if left != right {
-			return left > right
-		}
-		if result.Functions[i].File != result.Functions[j].File {
-			return result.Functions[i].File < result.Functions[j].File
-		}
-		if result.Functions[i].Name != result.Functions[j].Name {
-			return result.Functions[i].Name < result.Functions[j].Name
-		}
-		return functionLine(result.Functions[i]) < functionLine(result.Functions[j])
-	})
+	sortFunctionDeltas(result.Functions)
 
 	result.ClonesAdded, result.ClonesRemoved = cloneChanges(base.Clones, head.Clones, touchedSet)
 	baseCloneLines := touchedCloneLines(base.CloneCoverage, touchedSet)
@@ -107,6 +63,23 @@ func Build(base, head model.Snapshot, touched []string) (model.Diff, error) {
 		result.Buckets[bucket] = delta
 	}
 	return result, nil
+}
+
+func sortFunctionDeltas(deltas []model.FunctionDelta) {
+	sort.Slice(deltas, func(i, j int) bool {
+		left := math.Abs(deltas[i].DeltaMass)
+		right := math.Abs(deltas[j].DeltaMass)
+		if left != right {
+			return left > right
+		}
+		if deltas[i].File != deltas[j].File {
+			return deltas[i].File < deltas[j].File
+		}
+		if deltas[i].Name != deltas[j].Name {
+			return deltas[i].Name < deltas[j].Name
+		}
+		return functionLine(deltas[i]) < functionLine(deltas[j])
+	})
 }
 
 func analysisTouchedPaths(base, head model.Snapshot, touched []string) []string {
@@ -160,21 +133,24 @@ func analysisPathBuckets(paths []model.AnalysisPath) map[string]model.Bucket {
 }
 
 func changedFunctions(before, after []model.Function) ([]model.Function, []model.Function) {
+	afterBySignature := make(map[string][]int, len(after))
+	for i, function := range after {
+		signature := functionTreeSignature(function)
+		afterBySignature[signature] = append(afterBySignature[signature], i)
+	}
+	matchedBySignature := make(map[string]int, len(afterBySignature))
 	matchedAfter := make([]bool, len(after))
 	changedBefore := make([]model.Function, 0, len(before))
 	for _, baseFunction := range before {
-		matched := false
-		for i := range after {
-			if matchedAfter[i] || !equalFunctionMetrics(&baseFunction, &after[i]) {
-				continue
-			}
-			matchedAfter[i] = true
-			matched = true
-			break
-		}
-		if !matched {
+		signature := functionTreeSignature(baseFunction)
+		matched := matchedBySignature[signature]
+		candidates := afterBySignature[signature]
+		if matched == len(candidates) {
 			changedBefore = append(changedBefore, baseFunction)
+			continue
 		}
+		matchedAfter[candidates[matched]] = true
+		matchedBySignature[signature]++
 	}
 	changedAfter := make([]model.Function, 0, len(after))
 	for i, headFunction := range after {
@@ -183,6 +159,111 @@ func changedFunctions(before, after []model.Function) ([]model.Function, []model
 		}
 	}
 	return changedBefore, changedAfter
+}
+
+func functionTreeSignature(function model.Function) string {
+	nested := make([]string, len(function.Nested))
+	for i, child := range function.Nested {
+		nested[i] = functionTreeSignature(child)
+	}
+	sort.Strings(nested)
+	var signature strings.Builder
+	writeSignatureString(&signature, function.File)
+	writeSignatureString(&signature, function.Name)
+	writeSignatureString(&signature, string(functionBucket(function)))
+	signature.WriteString(strconv.Itoa(function.CC))
+	signature.WriteByte(':')
+	signature.WriteString(strconv.Itoa(function.SLOC))
+	signature.WriteByte(':')
+	signature.WriteString(strconv.FormatUint(math.Float64bits(function.Mass), 16))
+	signature.WriteByte(':')
+	signature.WriteString(strconv.Itoa(len(nested)))
+	signature.WriteByte(':')
+	for _, child := range nested {
+		writeSignatureString(&signature, child)
+	}
+	return signature.String()
+}
+
+func writeSignatureString(signature *strings.Builder, value string) {
+	signature.WriteString(strconv.Itoa(len(value)))
+	signature.WriteByte(':')
+	signature.WriteString(value)
+}
+
+func functionDeltas(key functionKey, before, after []model.Function) []model.FunctionDelta {
+	before, after = changedFunctions(before, after)
+	count := max(len(before), len(after))
+	deltas := make([]model.FunctionDelta, 0, count)
+	for i := 0; i < count; i++ {
+		var baseFunction, headFunction *model.Function
+		if i < len(before) {
+			item := before[i]
+			baseFunction = &item
+		}
+		if i < len(after) {
+			item := after[i]
+			headFunction = &item
+		}
+		deltas = append(deltas, functionDelta(key, baseFunction, headFunction))
+	}
+	return deltas
+}
+
+func nestedFunctionDeltas(before, after *model.Function) []model.FunctionDelta {
+	var baseGroups, headGroups map[functionKey][]model.Function
+	if before != nil {
+		baseGroups = groupNestedFunctions(before.Nested)
+	} else {
+		baseGroups = map[functionKey][]model.Function{}
+	}
+	if after != nil {
+		headGroups = groupNestedFunctions(after.Nested)
+	} else {
+		headGroups = map[functionKey][]model.Function{}
+	}
+	keys := functionKeys(baseGroups, headGroups)
+	deltas := []model.FunctionDelta{}
+	for _, key := range keys {
+		deltas = append(deltas, functionDeltas(key, baseGroups[key], headGroups[key])...)
+	}
+	sortFunctionDeltas(deltas)
+	return deltas
+}
+
+func groupNestedFunctions(functions []model.Function) map[functionKey][]model.Function {
+	groups := map[functionKey][]model.Function{}
+	for _, function := range functions {
+		key := functionKey{file: function.File, name: function.Name}
+		groups[key] = append(groups[key], function)
+	}
+	for key := range groups {
+		sort.Slice(groups[key], func(i, j int) bool {
+			return functionLess(groups[key][i], groups[key][j])
+		})
+	}
+	return groups
+}
+
+func functionKeys(before, after map[functionKey][]model.Function) []functionKey {
+	keys := make([]functionKey, 0, len(before)+len(after))
+	seen := map[functionKey]struct{}{}
+	for key := range before {
+		seen[key] = struct{}{}
+		keys = append(keys, key)
+	}
+	for key := range after {
+		if _, exists := seen[key]; !exists {
+			keys = append(keys, key)
+		}
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].file != keys[j].file {
+			return keys[i].file < keys[j].file
+		}
+		return keys[i].name < keys[j].name
+	})
+	return keys
 }
 
 func groupFunctions(functions []model.Function, touched map[string]struct{}) map[functionKey][]model.Function {
@@ -196,24 +277,25 @@ func groupFunctions(functions []model.Function, touched map[string]struct{}) map
 	}
 	for key := range groups {
 		sort.Slice(groups[key], func(i, j int) bool {
-			if groups[key][i].Line != groups[key][j].Line {
-				return groups[key][i].Line < groups[key][j].Line
-			}
-			if groups[key][i].CC != groups[key][j].CC {
-				return groups[key][i].CC < groups[key][j].CC
-			}
-			return groups[key][i].SLOC < groups[key][j].SLOC
+			return functionLess(groups[key][i], groups[key][j])
 		})
 	}
 	return groups
 }
 
-func equalFunctionMetrics(before, after *model.Function) bool {
-	return before != nil && after != nil && before.CC == after.CC && before.SLOC == after.SLOC && before.Mass == after.Mass && functionBucket(*before) == functionBucket(*after)
+func functionLess(left, right model.Function) bool {
+	if left.Line != right.Line {
+		return left.Line < right.Line
+	}
+	if left.CC != right.CC {
+		return left.CC < right.CC
+	}
+	return left.SLOC < right.SLOC
 }
 
 func functionDelta(key functionKey, before, after *model.Function) model.FunctionDelta {
 	delta := model.FunctionDelta{File: key.file, Name: key.name, Before: before, After: after}
+	delta.Nested = nestedFunctionDeltas(before, after)
 	if before != nil {
 		delta.DeltaMass -= before.Mass
 	}

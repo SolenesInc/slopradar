@@ -71,6 +71,49 @@ func TestBuildPreservesRepeatedNameMetricMatchesBeforePairingChanges(t *testing.
 	}
 }
 
+func TestBuildKeepsNestedChangesWhenParentMetricsAreEqual(t *testing.T) {
+	baseParent := functionAt("same.go", "outer", model.Source, 1, 7, 20)
+	baseParent.Nested = []model.Function{
+		functionAt("same.go", "(anonymous)", model.Source, 2, 2, 4),
+		functionAt("same.go", "(anonymous)", model.Source, 10, 4, 4),
+	}
+	headParent := functionAt("same.go", "outer", model.Source, 1, 7, 20)
+	headParent.Nested = []model.Function{
+		functionAt("same.go", "(anonymous)", model.Source, 3, 4, 1),
+		functionAt("same.go", "(anonymous)", model.Source, 11, 2, 16),
+	}
+	got := build(t, snapshot("base", []model.Function{baseParent}, model.Totals{}, model.Totals{}), snapshot("head", []model.Function{headParent}, model.Totals{}, model.Totals{}), []string{"same.go"})
+	if len(got.Functions) != 1 || got.Functions[0].DeltaMass != 0 || len(got.Functions[0].Nested) != 2 {
+		t.Fatalf("function deltas = %#v", got.Functions)
+	}
+	first := got.Functions[0].Nested[0]
+	second := got.Functions[0].Nested[1]
+	if first.Before.CC != 2 || first.After.CC != 4 || second.Before.CC != 4 || second.After.CC != 2 {
+		t.Fatalf("nested deltas = %#v", got.Functions[0].Nested)
+	}
+}
+
+func TestBuildScopesDuplicateNestedNamesToTheirParent(t *testing.T) {
+	baseA := nestedParent("outerA", 1, 2)
+	baseB := nestedParent("outerB", 10, 3)
+	headA := nestedParent("outerA", 1, 3)
+	headB := nestedParent("outerB", 10, 2)
+	got := build(t, snapshot("base", []model.Function{baseA, baseB}, model.Totals{}, model.Totals{}), snapshot("head", []model.Function{headA, headB}, model.Totals{}, model.Totals{}), []string{"same.go"})
+	if len(got.Functions) != 2 {
+		t.Fatalf("function deltas = %#v", got.Functions)
+	}
+	deltas := map[string]model.FunctionDelta{}
+	for _, delta := range got.Functions {
+		deltas[delta.Name] = delta
+	}
+	if len(deltas["outerA"].Nested) != 1 || deltas["outerA"].Nested[0].Before.CC != 2 || deltas["outerA"].Nested[0].After.CC != 3 {
+		t.Fatalf("outerA delta = %#v", deltas["outerA"])
+	}
+	if len(deltas["outerB"].Nested) != 1 || deltas["outerB"].Nested[0].Before.CC != 3 || deltas["outerB"].Nested[0].After.CC != 2 {
+		t.Fatalf("outerB delta = %#v", deltas["outerB"])
+	}
+}
+
 func TestBuildExpandsConfigTouchToChangedAnalysisPaths(t *testing.T) {
 	base := snapshot("base", []model.Function{function("included.go", "high", model.Source, 12, 25)}, model.Totals{}, model.Totals{})
 	base.AnalysisPaths = []model.AnalysisPath{{File: "included.go", Bucket: model.Source}, {File: "stable.go", Bucket: model.Source}}
@@ -163,6 +206,12 @@ func function(file, name string, bucket model.Bucket, cc, sloc int) model.Functi
 func functionAt(file, name string, bucket model.Bucket, line, cc, sloc int) model.Function {
 	function := model.NewFunction(file, name, line, cc, sloc, nil)
 	function.Bucket = bucket
+	return function
+}
+
+func nestedParent(name string, line, childCC int) model.Function {
+	function := functionAt("same.go", name, model.Source, line, 5, 10)
+	function.Nested = []model.Function{functionAt("same.go", "(anonymous)", model.Source, line+1, childCC, 4)}
 	return function
 }
 

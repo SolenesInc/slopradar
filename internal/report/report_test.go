@@ -217,6 +217,43 @@ func TestDiffTextUsesColorWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestDiffRenderersExposeNestedFunctionChanges(t *testing.T) {
+	beforeParent := model.NewFunction("same.go", "outer", 1, 7, 20, nil)
+	afterParent := model.NewFunction("same.go", "outer", 1, 7, 20, nil)
+	beforeNested := model.NewFunction("same.go", "(anonymous)", 2, 2, 4, nil)
+	afterNested := model.NewFunction("same.go", "(anonymous)", 3, 4, 4, nil)
+	result := model.Diff{
+		Buckets: map[model.Bucket]model.BucketDelta{model.Source: {}, model.Tests: {}},
+		Functions: []model.FunctionDelta{{
+			File: "same.go", Name: "outer", Before: &beforeParent, After: &afterParent,
+			Nested: []model.FunctionDelta{{File: "same.go", Name: "(anonymous)", Before: &beforeNested, After: &afterNested, DeltaMass: afterNested.Mass - beforeNested.Mass}},
+		}},
+	}
+	for _, format := range []string{"json", "md", "text"} {
+		var output strings.Builder
+		if err := WriteDiff(&output, format, result, true); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(output.String(), "(anonymous)") {
+			t.Fatalf("nested function missing from %s output: %q", format, output.String())
+		}
+		switch format {
+		case "json":
+			if !strings.Contains(output.String(), `"nested": [`) {
+				t.Fatalf("nested JSON field missing: %q", output.String())
+			}
+		case "md":
+			if !strings.Contains(output.String(), "1 top-level function changes; 1 nested function changes") || !strings.Contains(output.String(), "↳ (anonymous)") {
+				t.Fatalf("nested markdown hierarchy missing: %q", output.String())
+			}
+		case "text":
+			if !strings.Contains(output.String(), ">(anonymous)") || !strings.Contains(output.String(), "\x1b[32m+4.000\x1b[0m") {
+				t.Fatalf("nested text hierarchy or color missing: %q", output.String())
+			}
+		}
+	}
+}
+
 func TestMarkdownTestOnlyChangeGolden(t *testing.T) {
 	function := model.NewFunction("only_test.go", "TestOnly", 1, 12, 9, nil)
 	function.Bucket = model.Tests
