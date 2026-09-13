@@ -385,3 +385,22 @@ func TestDocstringsIgnorePrecedingComments(t *testing.T) {
 		t.Fatalf("source lines=%d, want class, function, return", got)
 	}
 }
+
+func TestParenthesizedDocstringsIgnoreCommentsBetweenLiterals(t *testing.T) {
+	source := []byte("(\n # within documentation\n \"first \"\n # between literals\n \"second\"\n)\ndef f():\n    (\"function doc\")\n    return 1\n")
+	result, err := Analyze("parenthesized.py", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Warnings) != 0 || len(result.Functions) != 1 || result.Functions[0].SLOC != 2 {
+		t.Fatalf("functions=%+v warnings=%v", result.Functions, result.Warnings)
+	}
+	for _, token := range result.Tokens {
+		if strings.Contains(token.Text, "first") || strings.Contains(token.Text, "second") || strings.Contains(token.Text, "doc") {
+			t.Fatalf("documentation token retained: %+v", token)
+		}
+	}
+	if got := lang.CountLines(source, result.Comments, result.TestSpans)[model.Source]; got != 2 {
+		t.Fatalf("source lines=%d, want function and return", got)
+	}
+}

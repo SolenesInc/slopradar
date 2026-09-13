@@ -185,16 +185,19 @@ func isComment(node *sitter.Node, source []byte) bool {
 }
 
 func plainString(node *sitter.Node, source []byte) bool {
-	if node.Kind() == "concatenated_string" {
-		if node.NamedChildCount() == 0 {
-			return false
-		}
+	if node.Kind() == "concatenated_string" || node.Kind() == "parenthesized_expression" {
+		literalCount := 0
 		for i := uint(0); i < node.NamedChildCount(); i++ {
-			if !plainString(node.NamedChild(i), source) {
+			child := node.NamedChild(i)
+			if child.Kind() == "comment" {
+				continue
+			}
+			if !plainString(child, source) {
 				return false
 			}
+			literalCount++
 		}
-		return true
+		return literalCount > 0 && (node.Kind() == "concatenated_string" || literalCount == 1)
 	}
 	if node.Kind() != "string" {
 		return false
