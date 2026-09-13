@@ -137,7 +137,12 @@ Built-in exclusions are `vendor/`, `node_modules/`, `dist/`, `target/`, Go files
 under `testdata/`, and dot directories. Built-in test paths are Go `_test.go` files;
 JavaScript and TypeScript `.test.*`, `.spec.*`, and `__tests__/`; Python
 `test_*.py`, `*_test.py`, and `tests/`; and Rust `tests/` plus `#[cfg(test)]`
-items and `#[test]` functions.
+items and `#[test]` functions. Rust also recognizes compound `cfg` predicates
+that prove an item requires a test build, such as `all(test, unix)` and
+`not(not(test))`. Predicates that can permit a production build, such as
+`any(test, unix)`, stay in the source bucket. Other configuration options remain
+unknown; their target or feature values are never guessed. These combinations
+follow the [Rust conditional compilation rules](https://doc.rust-lang.org/reference/conditional-compilation.html).
 
 Configuration globs use `/` as the path separator on the supported Unix
 platforms. A backslash escapes the next glob character; it is not a separator.

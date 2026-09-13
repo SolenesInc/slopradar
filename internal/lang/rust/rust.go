@@ -121,7 +121,7 @@ func testAttribute(item *sitter.Node, source []byte) bool {
 	case "test":
 		return arguments == nil && value == nil
 	case "cfg":
-		return value == nil && arguments != nil && compact(arguments.Utf8Text(source)) == "(test)"
+		return value == nil && arguments != nil && cfgRequiresTest(arguments, source)
 	default:
 		return false
 	}

@@ -55,7 +55,7 @@ func TestBlobsBuildsDeterministicBucketsAndSkippedFiles(t *testing.T) {
 
 func TestNestedRustTestBucketsSurviveScanAndFileOverrides(t *testing.T) {
 	source := []byte(`fn outer() {
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     fn test_helper() { let nested = || {}; }
     fn production_helper() {}
 }
