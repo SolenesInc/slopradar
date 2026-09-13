@@ -104,8 +104,8 @@ paths to the built-in classification:
 }
 ```
 
-Built-in exclusions are `vendor/`, `node_modules/`, `dist/`, `target/`, Go
-`testdata/`, and dot directories. Built-in test paths are Go `_test.go` files;
+Built-in exclusions are `vendor/`, `node_modules/`, `dist/`, `target/`, Go files
+under `testdata/`, and dot directories. Built-in test paths are Go `_test.go` files;
 JavaScript and TypeScript `.test.*`, `.spec.*`, and `__tests__/`; Python
 `test_*.py`, `*_test.py`, and `tests/`; and Rust `tests/` plus `#[cfg(test)]`
 items and `#[test]` functions.

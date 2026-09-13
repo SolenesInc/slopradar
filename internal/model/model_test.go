@@ -53,6 +53,22 @@ func TestClassifyPreservesUnixBackslashesAndGlobEscapes(t *testing.T) {
 	}
 }
 
+func TestClassifyLimitsBuiltInTestdataExclusionToGo(t *testing.T) {
+	for _, file := range []string{"testdata/helper.go", "src/testdata/helper.GO"} {
+		if got := Classify(file, nil, Config{}); !got.Excluded {
+			t.Errorf("Go file %q was not excluded: %#v", file, got)
+		}
+	}
+	for _, file := range []string{"testdata/helper.ts", "testdata/helper.py", "testdata/helper.rs"} {
+		if got := Classify(file, nil, Config{}); got.Excluded {
+			t.Errorf("non-Go file %q was excluded: %#v", file, got)
+		}
+	}
+	if got := Classify("testdata/helper.ts", nil, Config{Excludes: []string{"testdata/"}}); !got.Excluded {
+		t.Fatalf("explicit testdata exclusion did not apply: %#v", got)
+	}
+}
+
 func TestGeneratedMarkersMustAppearInComments(t *testing.T) {
 	content, err := os.ReadFile("classify.go")
 	if err != nil {

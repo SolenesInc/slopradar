@@ -81,6 +81,28 @@ func TestDirectoryFiltersBeforeReadingContent(t *testing.T) {
 	}
 }
 
+func TestDirectoryLimitsBuiltInTestdataExclusionToGo(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "testdata"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeScanFile(t, dir, filepath.Join("testdata", "fixture.go"), "package fixture\n\nfunc goFixture() {}\n")
+	writeScanFile(t, dir, filepath.Join("testdata", "fixture.ts"), "function tsFixture() {}\n")
+	writeScanFile(t, dir, filepath.Join("testdata", "fixture.py"), "def python_fixture():\n    pass\n")
+	writeScanFile(t, dir, filepath.Join("testdata", "fixture.rs"), "fn rust_fixture() {}\n")
+	snapshot, err := Directory(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, function := range snapshot.Functions {
+		got[function.Name] = true
+	}
+	if len(snapshot.Functions) != 3 || !got["tsFixture"] || !got["python_fixture"] || !got["rust_fixture"] || got["goFixture"] {
+		t.Fatalf("functions = %#v", snapshot.Functions)
+	}
+}
+
 func TestDirectoryIgnoresSymlinkedConfiguration(t *testing.T) {
 	dir := t.TempDir()
 	writeScanFile(t, dir, "source.go", "package fixture\n\nfunc kept() {}\n")

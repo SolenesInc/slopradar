@@ -156,6 +156,38 @@ func TestDiffJSONSerializesEveryPathField(t *testing.T) {
 	}
 }
 
+func TestOrdinaryJSONMatchesStandardEncoder(t *testing.T) {
+	function := model.NewFunction("src/café.go", "run", 2, 3, 4, []model.Function{})
+	function.Bucket = model.Source
+	snapshot := model.Snapshot{
+		Rev: "abc", Functions: []model.Function{function}, Clones: []model.ClonePair{},
+		Buckets: map[model.Bucket]model.Totals{model.Source: {}, model.Tests: {}},
+		Skipped: []string{}, SkippedDetails: []model.SkippedFile{}, Warnings: []string{},
+	}
+	difference := model.Diff{
+		Base: "abc", Head: "def", Touched: []string{"src/café.go"},
+		Buckets:     map[model.Bucket]model.BucketDelta{model.Source: {}, model.Tests: {}},
+		Functions:   []model.FunctionDelta{{File: function.File, After: &function}},
+		ClonesAdded: []model.ClonePair{}, ClonesRemoved: []model.ClonePair{}, Trend: []model.TrendPoint{},
+	}
+	for name, value := range map[string]any{"snapshot": snapshot, "diff": difference, "nil snapshot": model.Snapshot{}, "nil diff": model.Diff{}} {
+		var got strings.Builder
+		if err := writeJSON(&got, value); err != nil {
+			t.Fatal(err)
+		}
+		var want strings.Builder
+		encoder := json.NewEncoder(&want)
+		encoder.SetEscapeHTML(false)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(value); err != nil {
+			t.Fatal(err)
+		}
+		if got.String() != want.String() {
+			t.Fatalf("ordinary %s JSON changed\ngot:  %s\nwant: %s", name, got.String(), want.String())
+		}
+	}
+}
+
 func TestEmptyDiffMarkdownHasOneHeadlineLine(t *testing.T) {
 	result := model.Diff{Buckets: map[model.Bucket]model.BucketDelta{model.Source: {}, model.Tests: {}}}
 	var output strings.Builder

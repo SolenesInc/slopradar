@@ -92,7 +92,11 @@ func serializedSnapshot(snapshot model.Snapshot) model.Snapshot {
 	snapshot.Functions = serializedFunctions(snapshot.Functions)
 	snapshot.Clones = serializedClones(snapshot.Clones)
 	snapshot.Skipped = serializedStrings(snapshot.Skipped)
-	snapshot.SkippedDetails = append([]model.SkippedFile(nil), snapshot.SkippedDetails...)
+	if snapshot.SkippedDetails != nil {
+		details := make([]model.SkippedFile, len(snapshot.SkippedDetails))
+		copy(details, snapshot.SkippedDetails)
+		snapshot.SkippedDetails = details
+	}
 	for index := range snapshot.SkippedDetails {
 		snapshot.SkippedDetails[index].File = safeText(snapshot.SkippedDetails[index].File)
 	}
@@ -102,7 +106,11 @@ func serializedSnapshot(snapshot model.Snapshot) model.Snapshot {
 
 func serializedDiff(result model.Diff) model.Diff {
 	result.Touched = serializedStrings(result.Touched)
-	result.Functions = append([]model.FunctionDelta(nil), result.Functions...)
+	if result.Functions != nil {
+		functions := make([]model.FunctionDelta, len(result.Functions))
+		copy(functions, result.Functions)
+		result.Functions = functions
+	}
 	for index := range result.Functions {
 		result.Functions[index].File = safeText(result.Functions[index].File)
 		result.Functions[index].Before = serializedFunctionPointer(result.Functions[index].Before)

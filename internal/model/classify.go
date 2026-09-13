@@ -73,9 +73,11 @@ func Classify(file string, content []byte, config Config) Classification {
 }
 
 func excluded(file string, additions []string) bool {
+	extension := strings.ToLower(path.Ext(file))
 	parts := strings.Split(file, "/")
 	for _, part := range parts[:len(parts)-1] {
-		if strings.HasPrefix(part, ".") || part == "vendor" || part == "node_modules" || part == "dist" || part == "target" || part == "testdata" {
+		switch {
+		case strings.HasPrefix(part, "."), part == "vendor", part == "node_modules", part == "dist", part == "target", part == "testdata" && extension == ".go":
 			return true
 		}
 	}
