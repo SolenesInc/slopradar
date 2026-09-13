@@ -149,7 +149,7 @@ func sequencePosition(parent, node *sitter.Node) (int, int) {
 func enclosingClass(node *sitter.Node, source []byte) string {
 	var names []string
 	for parent := node.Parent(); parent != nil; parent = parent.Parent() {
-		if parent.Kind() == "function_definition" {
+		if isFunction(parent) {
 			break
 		}
 		if parent.Kind() == "class_definition" {

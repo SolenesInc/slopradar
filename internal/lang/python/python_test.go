@@ -353,3 +353,16 @@ func TestCollectionCommentsAndCallbackArguments(t *testing.T) {
 		t.Fatalf("names = %q, want %q", names, want)
 	}
 }
+
+func TestClassOwnerStopsAtLambdaBoundary(t *testing.T) {
+	result, err := Analyze("classes.py", []byte("class A:\n outer = lambda: (lambda: 1, lambda: 2)\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Functions) != 1 || result.Functions[0].Name != "A.outer" || len(result.Functions[0].Nested) != 2 {
+		t.Fatalf("functions = %#v", result.Functions)
+	}
+	if result.Functions[0].Nested[0].Name != "[0]" || result.Functions[0].Nested[1].Name != "[1]" {
+		t.Fatalf("nested = %#v", result.Functions[0].Nested)
+	}
+}
