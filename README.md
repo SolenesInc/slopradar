@@ -192,6 +192,11 @@ library scan also names generated `cmd/compile/internal/ssa/opGen.go` and
 `cmd/compile/internal/ssa/rewriteAMD64.go` as skipped above the documented file
 size tripwire.
 
+The [full baseline receipt](docs/baselines-v0.1.0.json) preserves the inputs,
+commands, warnings, and unrounded outputs. The
+[reproduction guide](docs/baselines.md) records how each scoped input was
+assembled.
+
 ## What it is not
 
 - No merge gate or quality ratchet.
