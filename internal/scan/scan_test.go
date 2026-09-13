@@ -190,6 +190,14 @@ function broken(`)
 	}
 }
 
+func TestBlobsRejectsGoParseErrors(t *testing.T) {
+	source := []byte("package fixture\nfunc broken(")
+	snapshot, err := Blobs("abc", []gitread.Blob{{BlobInfo: gitread.BlobInfo{Path: "source.go", Size: int64(len(source))}, Content: source}})
+	if err == nil || !strings.Contains(err.Error(), "parse source.go: invalid Go syntax") {
+		t.Fatalf("snapshot = %#v, error = %v", snapshot, err)
+	}
+}
+
 func TestBlobsPreservesNonUTF8TypeScriptPath(t *testing.T) {
 	file := string([]byte{'s', 'o', 'u', 'r', 'c', 'e', 0xff, '.', 't', 's'})
 	source := []byte("function run() {}")

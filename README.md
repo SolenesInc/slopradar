@@ -157,7 +157,7 @@ error-flow decision, analogous to the explicit error checks visible in Go.
 ## Baselines
 
 These are source-bucket erosion measurements made with the shipped CLI at
-commit `4a264f7`, using Go `1.27.1` and `--no-cache`. Each row is restricted to
+commit `6d64189`, using Go `1.27.1` and `--no-cache`. Each row is restricted to
 the stated language and path because erosion is language-bound. The adjacent
 prototype value is the expectation recorded before the production parsers were
 integrated.
@@ -177,14 +177,14 @@ erosion() {
 | Corpus | Pinned revision | Shipped | Prototype | Command |
 | --- | --- | ---: | ---: | --- |
 | Go standard library | `go1.27.1`, `$GOROOT/src` | 0.741 | 0.743 | `slopradar scan --no-cache --format json "$GOROOT/src" \| erosion '\.go$'` |
-| `golang.org/x/tools` | `v0.49.0` | 0.727 | 0.722 | `slopradar scan --no-cache --format json "$BASELINES/tools" \| erosion '\.go$'` |
+| `golang.org/x/tools` | `v0.49.0` | 0.721 | 0.722 | `slopradar scan --no-cache --format json "$BASELINES/tools" \| erosion '\.go$'` |
 | `honnef.co/go/tools` (staticcheck) | `v0.8.1` | 0.748 | 0.749 | `slopradar scan --no-cache --format json "$BASELINES/staticcheck" \| erosion '\.go$'` |
 | `net/http` | `go1.27.1`, `$GOROOT/src/net/http` | 0.588 | 0.589 | `slopradar scan --no-cache --format json "$GOROOT/src/net/http" \| erosion '\.go$'` |
 | `os` | `go1.27.1`, `$GOROOT/src/os` | 0.476 | 0.477 | `slopradar scan --no-cache --format json "$GOROOT/src/os" \| erosion '\.go$'` |
 | attn Go, `cmd` and `internal` | `e05560650af06855452a9793a4f987ded9ca1d99` | 0.593 | 0.593 | `slopradar scan --no-cache --format json "$BASELINES/attn-go" \| erosion '\.go$'` |
-| zod, `packages/zod/src` | `46da95720b7293f156ad9c683c14bd8ab9664c2f` | 0.805 | 0.805 | `slopradar scan --no-cache --format json "$BASELINES/zod" \| erosion '\.(ts\|tsx)$'` |
+| zod, `packages/zod/src` | `46da95720b7293f156ad9c683c14bd8ab9664c2f` | 0.804 | 0.805 | `slopradar scan --no-cache --format json "$BASELINES/zod" \| erosion '\.(ts\|tsx)$'` |
 | vitest, `packages/*` | `2ce29d5fa758046e5453bd92b8ed6c9da9709bb5` | 0.652 | 0.652 | `slopradar scan --no-cache --format json "$BASELINES/vitest" \| erosion '\.(ts\|tsx)$'` |
-| excalidraw, `packages` and `excalidraw-app` | `afa3a653fc5d2b742adcbd5a6063187b056d2419` | 0.796 | 0.796 | `slopradar scan --no-cache --format json "$BASELINES/excalidraw" \| erosion '\.(ts\|tsx)$'` |
+| excalidraw, `packages` and `excalidraw-app` | `afa3a653fc5d2b742adcbd5a6063187b056d2419` | 0.795 | 0.796 | `slopradar scan --no-cache --format json "$BASELINES/excalidraw" \| erosion '\.(ts\|tsx)$'` |
 | attn TypeScript, `app/src`, `app/lint`, `sdk`, and `plugins` | `e05560650af06855452a9793a4f987ded9ca1d99` | 0.912 | 0.912 | `slopradar scan --no-cache --format json "$BASELINES/attn-ts" \| erosion '\.(ts\|tsx)$'` |
 
 The production and prototype figures differ slightly because their parsers do
@@ -196,15 +196,9 @@ The Vitest and other TypeScript receipt directories omit declaration files, as
 the prototype did. The attn TypeScript receipt also excludes its unmarked
 `app/src/types/generated.ts`; a default scan includes unmarked generated output.
 
-The Go standard-library result is the shipped output, not a claim of complete
-Go 1.27 parser parity. The scan reports recoverable-syntax warnings for
-`cmd/compile/internal/types2/trie_test.go`,
-`encoding/json/v2/arshal_test.go`, `math/rand/v2/rand.go`,
-`net/http/internal/http2/server.go`, `runtime/secret/secret_test.go`, and
-`runtime/traceback_test.go`. Those files use Go 1.27 syntax absent from the
-pinned tree-sitter grammar: generalized `new(expression)` and generic methods.
-The `net/http` row includes its `internal/http2/server.go` warning. The standard
-library scan also names generated `cmd/compile/internal/ssa/opGen.go` and
+The Go analyzer uses the Go 1.27 standard parser and accepts generalized
+`new(expression)` and generic methods. The full standard-library scan completes
+without warnings. It names generated `cmd/compile/internal/ssa/opGen.go` and
 `cmd/compile/internal/ssa/rewriteAMD64.go` as skipped above the documented file
 size tripwire.
 

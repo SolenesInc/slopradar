@@ -1,7 +1,6 @@
 package golang
 
 import (
-	"bytes"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -119,9 +118,6 @@ func appendStringTokens(tokens []lang.Token, tokenFile *token.File, source []byt
 }
 
 func appendContentToken(tokens []lang.Token, tokenFile *token.File, source []byte, start, end int) []lang.Token {
-	if len(bytes.TrimSpace(source[start:end])) == 0 {
-		return tokens
-	}
 	return appendToken(tokens, tokenFile, source, start, end)
 }
 

@@ -13,7 +13,7 @@ silently replacing these numbers.
 
 Install Git, Go 1.27.1, `jq`, `rsync`, and a C compiler. The recorded binary was
 built with `go1.27.1 darwin/arm64`; its SHA-256 checksum is
-`3004ed64fe156dc2bfddfac5accf94281891c7d8f5c47698b069a870e25aad1c`.
+`eddf1dd8ff7c3941e5bc57f388c97be55b42ef0a1c3480d2ca234abce675d4eb`.
 Network access is required to fetch the pinned inputs.
 
 Start in an empty temporary directory:
@@ -21,7 +21,7 @@ Start in an empty temporary directory:
 ```sh
 baseline_root=$(mktemp -d)
 git clone https://github.com/SolenesInc/slopradar.git "$baseline_root/slopradar"
-git -C "$baseline_root/slopradar" checkout --detach 4a264f7eba6713098ee4ac68129ddd331a29201e
+git -C "$baseline_root/slopradar" checkout --detach 6d64189b74f0c751217ef73cd7920b856c301b1a
 go -C "$baseline_root/slopradar" build -o "$baseline_root/slopradar-bin" ./cmd/slopradar
 ```
 
@@ -137,5 +137,10 @@ Run the ten scans without cache:
 
 Compare the unrounded erosion values, warnings, skipped-file details, function
 counts, and mass totals with [the JSON receipt](baselines-v0.1.0.json). The
-standard-library and `net/http` warnings are expected limitations of the
-parser version used for this historical measurement.
+standard-library and `net/http` scans have no parser warnings.
+
+Function counts use the same language filter as erosion. The historical
+standard-library receipt's 39,709 count accidentally included 75 JavaScript
+and 48 Python functions embedded under `$GOROOT/src`; its Go-only count was
+39,586. The standard parser reports 39,587 Go functions because it also parses
+`math/rand/v2.Rand.N`, the single source row the old parser missed.

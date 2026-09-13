@@ -209,6 +209,23 @@ func TestPhysicalCoordinatesAndExactLexicalTokens(t *testing.T) {
 	}
 }
 
+func TestWhitespaceOnlyStringContentsRemainCloneTokens(t *testing.T) {
+	source := []byte("package fixture\nvar one = \" \"\nvar two = \"  \"\nvar raw = `\t`\n")
+	result, err := Analyze("fixture.go", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents := []string{}
+	for _, item := range result.Tokens {
+		if item.Text == " " || item.Text == "  " || item.Text == "\t" {
+			contents = append(contents, item.Text)
+		}
+	}
+	if !reflect.DeepEqual(contents, []string{" ", "  ", "\t"}) {
+		t.Fatalf("whitespace string tokens = %#v", contents)
+	}
+}
+
 func TestAnalyzeRejectsRecoveredSyntax(t *testing.T) {
 	result, err := Analyze("broken.go", []byte("package fixture\nfunc broken("))
 	if err == nil || !strings.Contains(err.Error(), "parse broken.go: invalid Go syntax") {
