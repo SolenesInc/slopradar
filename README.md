@@ -159,7 +159,9 @@ marks the file and its child modules as tests. Module resolution uses only
 analyzed files, without running Cargo or expanding macros. Crate roots follow
 standard Cargo entry-point layouts (`src/lib.rs`, `src/main.rs`, `build.rs`, binaries,
 examples, benches, and integration tests); custom Cargo target paths are not
-interpreted. Nested files named `main.rs` or `lib.rs` remain ordinary modules.
+interpreted. Build-script roots use `Cargo.toml` path metadata even when source
+files are generated or excluded. Nested files named `main.rs` or `lib.rs` remain
+ordinary modules.
 Conditional or unresolvable module paths produce warnings; scans retain conservative source
 classification and diff/trend reject incomplete analysis. Explicit `test_globs`
 can classify standalone test files.

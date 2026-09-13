@@ -428,14 +428,27 @@ impl<'s> MetricVisitor<'s> {
         }
     }
 
+    fn lexical_owner(&self) -> Option<&str> {
+        self.hints
+            .last()
+            .filter(|hint| hint.as_str() != "(anonymous)" && !hint.starts_with("cb:"))
+            .map(String::as_str)
+    }
+
     fn class_name(&self, class: &Class<'_>) -> String {
-        class.id.as_ref().map_or_else(
-            || match self.hints.last() {
-                Some(hint) if hint != "(anonymous)" && !hint.starts_with("cb:") => hint.clone(),
-                _ => "(anonymous class)".to_string(),
-            },
-            |identifier| identifier.name.to_string(),
-        )
+        let owner = self.lexical_owner().or_else(|| {
+            if self.stack.is_empty() {
+                self.class_names.last().map(String::as_str)
+            } else {
+                None
+            }
+        });
+        match (class.id.as_ref(), owner) {
+            (Some(identifier), Some(owner)) => format!("{owner}.{}", identifier.name),
+            (Some(identifier), None) => identifier.name.to_string(),
+            (None, Some(owner)) => owner.to_string(),
+            (None, None) => "(anonymous class)".to_string(),
+        }
     }
 
     fn class_member_name(&self, name: String, r#static: bool, kind: Option<&str>) -> String {
@@ -501,10 +514,17 @@ impl<'a> Visit<'a> for MetricVisitor<'_> {
             walk::walk_function(self, function, flags);
             return;
         }
-        let name = function
-            .id
-            .as_ref()
-            .map_or_else(|| self.hint(), |identifier| identifier.name.to_string());
+        let name = function.id.as_ref().map_or_else(
+            || self.hint(),
+            |identifier| {
+                if function.r#type == FunctionType::FunctionExpression
+                    && let Some(owner) = self.lexical_owner()
+                {
+                    return format!("{owner}.{}", identifier.name);
+                }
+                identifier.name.to_string()
+            },
+        );
         self.start_function(name, function.span);
         self.with_hint("(anonymous)".to_string(), |visitor| {
             walk::walk_function(visitor, function, flags)
@@ -689,6 +709,44 @@ mod tests {
     }
 
     #[test]
+    fn named_class_expressions_keep_outer_ownership() {
+        let analysis = analyze_source(
+            "classes.ts",
+            "class OuterA { static child = class Inner { run() {} }; static { class Local { run() {} } } } class OuterB { static child = class Inner { run() {} } } const First = class Shared { run() {} }; const Second = class Shared { run() {} };",
+        );
+        assert_eq!(analysis.status, Status::Ok);
+        let names = analysis
+            .functions
+            .iter()
+            .map(|f| f.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                "OuterA.static child.Inner.run",
+                "OuterA.Local.run",
+                "OuterB.static child.Inner.run",
+                "First.Shared.run",
+                "Second.Shared.run"
+            ]
+        );
+    }
+
+    #[test]
+    fn named_function_expressions_keep_assignment_owners() {
+        let analysis = analyze_source(
+            "functions.ts",
+            "const first = function shared() {}; const second = function shared() {}; function outer() { const local = function shared() {}; function declared() {} }",
+        );
+        assert_eq!(analysis.status, Status::Ok);
+        assert_eq!(analysis.functions[0].name, "first.shared");
+        assert_eq!(analysis.functions[1].name, "second.shared");
+        assert_eq!(analysis.functions[2].name, "outer");
+        assert_eq!(analysis.functions[2].nested[0].name, "local.shared");
+        assert_eq!(analysis.functions[2].nested[1].name, "declared");
+    }
+
+    #[test]
     fn counts_every_function_span() {
         let analysis = analyze_source(
             "valid.ts",
@@ -749,7 +807,7 @@ mod tests {
                 "A.task",
                 "A.static boot",
                 "Assigned.run",
-                "Internal.run",
+                "Alias.Internal.run",
                 "(anonymous class).run",
                 "Outer.method",
             ]
@@ -779,7 +837,7 @@ mod tests {
                 "owned.get value",
                 "owned.set value",
                 "owned.nested.run",
-                "retained",
+                "owned.explicit.retained",
                 "assigned.target.run",
                 "assigned.target.nested.arrow",
                 "run",

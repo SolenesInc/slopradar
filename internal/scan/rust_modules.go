@@ -21,12 +21,13 @@ type moduleResolver struct {
 	edges    map[int][]moduleEdge
 	incoming map[int]bool
 	warnings []string
+	packages map[string]bool
 	ignored  map[string]bool
 	config   model.Config
 }
 
-func classifyRustModules(files []analyzedFile, ignored map[string]bool, config model.Config) []string {
-	r := moduleResolver{files: files, ignored: ignored, config: config, index: map[string]int{}, edges: map[int][]moduleEdge{}, incoming: map[int]bool{}}
+func classifyRustModules(files []analyzedFile, ignored, packages map[string]bool, config model.Config) []string {
+	r := moduleResolver{files: files, ignored: ignored, packages: packages, config: config, index: map[string]int{}, edges: map[int][]moduleEdge{}, incoming: map[int]bool{}}
 	for i, file := range files {
 		if file.analysis.language == "rust" {
 			r.index[file.blob.Path] = i
@@ -167,14 +168,7 @@ func (r *moduleResolver) invalidPath(from int, module, name string) {
 func (r *moduleResolver) crateRoot(file string) bool {
 	if path.Base(file) == "build.rs" {
 		dir := path.Dir(file)
-		if dir == "." {
-			return true
-		}
-		for candidate := range r.index {
-			if strings.HasPrefix(candidate, path.Join(dir, "src")+"/") {
-				return true
-			}
-		}
+		return dir == "." || r.packages[dir]
 	}
 	return rustCrateRoot(file)
 }

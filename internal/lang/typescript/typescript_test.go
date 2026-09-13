@@ -203,7 +203,7 @@ class Outer {
 		"Declared.task",
 		"Declared.static boot",
 		"Assigned.run",
-		"Internal.run",
+		"Alias.Internal.run",
 		"(anonymous class).run",
 		"Outer.method",
 	}
@@ -247,7 +247,7 @@ function outer() { return { run() {} } }
 		"owned.get value",
 		"owned.set value",
 		"owned.nested.run",
-		"retained",
+		"owned.explicit.retained",
 		"assigned.target.run",
 		"assigned.target.nested.arrow",
 		"run",

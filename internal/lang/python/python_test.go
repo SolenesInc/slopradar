@@ -305,3 +305,20 @@ func TestCallbackNamesRetainAssignments(t *testing.T) {
 		t.Fatalf("nested = %#v", result.Functions[3])
 	}
 }
+
+func TestClassLambdaOwners(t *testing.T) {
+	result, err := Analyze("classes.py", []byte("class A:\n callback = wrap(lambda: 1)\nclass B:\n callback = wrap(lambda: 2)\n def method(self):\n  local = wrap(lambda: 3)\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, f := range result.Functions {
+		names = append(names, f.Name)
+	}
+	if !reflect.DeepEqual(names, []string{"A.callback.cb:wrap", "B.callback.cb:wrap", "B.method"}) {
+		t.Fatalf("names = %q", names)
+	}
+	if result.Functions[2].Nested[0].Name != "local.cb:wrap" {
+		t.Fatalf("nested = %#v", result.Functions[2])
+	}
+}

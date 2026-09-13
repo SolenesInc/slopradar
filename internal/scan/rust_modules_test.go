@@ -55,7 +55,7 @@ func TestRustExternalModuleScopes(t *testing.T) {
 		{"multifile examples root", map[string]string{"examples/demo/main.rs": "#[cfg(test)] mod child;", "examples/demo/child.rs": "fn child() {}"}, []string{"examples/demo/child.rs"}, false},
 		{"multifile benches root", map[string]string{"benches/demo/main.rs": "#[cfg(test)] mod child;", "benches/demo/child.rs": "fn child() {}"}, []string{"benches/demo/child.rs"}, false},
 		{"build script root", map[string]string{"build.rs": "mod helper; fn main() {}", "helper.rs": "fn helper() {}"}, nil, false},
-		{"workspace build script root", map[string]string{"crates/demo/build.rs": "mod helper; fn main() {}", "crates/demo/helper.rs": "fn helper() {}", "crates/demo/src/lib.rs": "fn public() {}"}, nil, false},
+		{"workspace build script root", map[string]string{"crates/demo/Cargo.toml": "[package]\nname=\"demo\"\nversion=\"0.1.0\"", "crates/demo/build.rs": "mod helper; fn main() {}", "crates/demo/helper.rs": "fn helper() {}", "crates/demo/src/lib.rs": "fn public() {}"}, nil, false},
 		{"nested build is a module", map[string]string{"src/lib.rs": "#[cfg(test)] mod build;", "src/build.rs": "mod child; fn entry() {}", "src/build/child.rs": "fn child() {}"}, []string{"src/build.rs", "src/build/child.rs"}, false},
 		{"unrooted cycle", map[string]string{"src/a.rs": "#[path=\"b.rs\"] mod b; fn a() {}", "src/b.rs": "#[path=\"a.rs\"] mod a; fn b() {}"}, nil, false},
 	} {
@@ -205,6 +205,49 @@ func TestIgnoredRustModulesAllowDirectoryAndGitReports(t *testing.T) {
 				if _, err := diff.Build(s, s, []string{"lib.rs"}); err != nil {
 					t.Fatal(err)
 				}
+			}
+		})
+	}
+}
+
+func TestBuildRootSurvivesOmittedSource(t *testing.T) {
+	for _, kind := range []string{"generated", "excluded-file", "excluded-directory"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(dir, "crates/demo/src"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			gitForScan(t, dir, "init", "-b", "main")
+			gitForScan(t, dir, "config", "user.name", "Slopradar Test")
+			gitForScan(t, dir, "config", "user.email", "test@slopradar.invalid")
+			writeScanFile(t, dir, "crates/demo/Cargo.toml", "[package]\nname=\"demo\"\nversion=\"0.1.0\"\n")
+			writeScanFile(t, dir, "crates/demo/build.rs", "mod helper; fn main() {}\n")
+			writeScanFile(t, dir, "crates/demo/helper.rs", "pub fn helper() {}\n")
+			source := "pub fn library() {}\n"
+			switch kind {
+			case "generated":
+				source = "// @generated\n" + source
+			case "excluded-file":
+				writeScanFile(t, dir, ".slopradar.json", `{"excludes":["crates/demo/src/lib.rs", "**/Cargo.toml"]}`)
+			case "excluded-directory":
+				writeScanFile(t, dir, ".slopradar.json", `{"excludes":["crates/demo/src/"]}`)
+			}
+			writeScanFile(t, dir, "crates/demo/src/lib.rs", source)
+			gitForScan(t, dir, "add", ".")
+			gitForScan(t, dir, "commit", "-m", "fixture")
+			gitSnapshot, err := Revision(context.Background(), dir, "HEAD")
+			if err != nil {
+				t.Fatal(err)
+			}
+			directory, err := Directory(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(gitSnapshot.Warnings) != 0 || len(directory.Warnings) != 0 || len(gitSnapshot.Functions) != 2 || !reflect.DeepEqual(gitSnapshot.Functions, directory.Functions) {
+				t.Fatalf("Git=%#v directory=%#v", gitSnapshot, directory)
+			}
+			if _, err := diff.Build(gitSnapshot, directory, nil); err != nil {
+				t.Fatal(err)
 			}
 		})
 	}

@@ -47,12 +47,16 @@ func decision(node *sitter.Node, _ []byte) int {
 }
 
 func name(node *sitter.Node, source []byte) string {
+	functionName := localName(node, source)
+	if className := enclosingClass(node, source); className != "" {
+		return className + "." + functionName
+	}
+	return functionName
+}
+
+func localName(node *sitter.Node, source []byte) string {
 	if node.Kind() == "function_definition" {
-		functionName := text(node.ChildByFieldName("name"), source)
-		if className := enclosingClass(node, source); className != "" {
-			return className + "." + functionName
-		}
-		return functionName
+		return text(node.ChildByFieldName("name"), source)
 	}
 	suffix := ""
 	for parent := node.Parent(); parent != nil; parent = parent.Parent() {

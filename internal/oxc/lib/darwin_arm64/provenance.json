@@ -3,11 +3,11 @@
   "rust_target": "aarch64-apple-darwin",
   "toolchain": "1.96.0",
   "compiler": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2",
-  "source_sha256": "5d264a48d398285a93287d0e4ecb5465c6c9e458fc4426f6e876ae7028231faa",
+  "source_sha256": "f9608b6722656c9045a913368fef0b769dcc55b25a45352f66b3b8f78fb0442f",
   "build_script_sha256": "c6ecaa0927c521c169a1c356e2c8c235160b80fb3fd90bfb45f279ec9c5e536d",
   "cargo_lock_sha256": "9b738e58a28530f5fb6bd64e9240f8abc095f5aa91fe902afbcfca18717fa899",
   "archive": "libslopradar_oxc.a",
-  "archive_bytes": 41957144,
-  "archive_sha256": "a599c1ab22589f93672c6d183020ab5719bf8095c9aac0fc52fb5d23c71362e8",
+  "archive_bytes": 41959040,
+  "archive_sha256": "e2de5cbddb238b6e790710ec0ca1a40cf624a34bb74909013e9d33fa143a3c29",
   "deployment_target": "MACOSX_DEPLOYMENT_TARGET=11.0"
 }

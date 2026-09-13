@@ -39,10 +39,15 @@ func Directory(root string) (model.Snapshot, error) {
 	if err != nil {
 		return model.Snapshot{}, err
 	}
+	var packageFiles []gitread.Blob
 	skipped := []model.SkippedFile{}
 	filter := func(file string, size int64, directory bool) bool {
 		if directory {
 			return !model.ExcludedDirectory(file, config.Excludes)
+		}
+		if path.Base(file) == "Cargo.toml" {
+			packageFiles = append(packageFiles, gitread.Blob{BlobInfo: gitread.BlobInfo{Path: file}})
+			return false
 		}
 		if model.Classify(file, nil, config).Excluded {
 			return false
@@ -60,7 +65,7 @@ func Directory(root string) (model.Snapshot, error) {
 	if err != nil {
 		return model.Snapshot{}, err
 	}
-	return blobsWithConfig("directory", blobs, config, skipped, nil)
+	return blobsWithConfig("directory", append(blobs, packageFiles...), config, skipped, nil)
 }
 
 func Revision(ctx context.Context, root, rev string) (model.Snapshot, error) {
@@ -84,9 +89,14 @@ func RevisionWithCache(ctx context.Context, root, rev string, cache *analysiscac
 	if err != nil {
 		return model.Snapshot{}, err
 	}
+	var packageFiles []gitread.Blob
 	selected := make([]gitread.BlobInfo, 0, len(infos))
 	skipped := []model.SkippedFile{}
 	for _, info := range infos {
+		if path.Base(info.Path) == "Cargo.toml" {
+			packageFiles = append(packageFiles, gitread.Blob{BlobInfo: gitread.BlobInfo{Path: info.Path}})
+			continue
+		}
 		if model.Classify(info.Path, nil, config).Excluded {
 			continue
 		}
@@ -103,7 +113,7 @@ func RevisionWithCache(ctx context.Context, root, rev string, cache *analysiscac
 	if err != nil {
 		return model.Snapshot{}, err
 	}
-	return blobsWithConfig(resolved, blobs, config, skipped, cache)
+	return blobsWithConfig(resolved, append(blobs, packageFiles...), config, skipped, cache)
 }
 
 func Blobs(rev string, blobs []gitread.Blob) (model.Snapshot, error) {
@@ -129,8 +139,13 @@ func blobsWithConfig(rev string, blobs []gitread.Blob, config model.Config, skip
 	functions := map[model.Bucket][]model.Function{model.Source: {}, model.Tests: {}}
 	cloneFiles := []clones.File{}
 	ignored := map[string]bool{}
+	packages := map[string]bool{}
 	var files []analyzedFile
 	for _, blob := range blobs {
+		if path.Base(blob.Path) == "Cargo.toml" {
+			packages[path.Dir(blob.Path)] = true
+			continue
+		}
 		classification := model.Classify(blob.Path, blob.Content, config)
 		if classification.Excluded || classification.Generated {
 			ignored[blob.Path] = true
@@ -156,7 +171,7 @@ func blobsWithConfig(rev string, blobs []gitread.Blob, config model.Config, skip
 		}
 		files = append(files, analyzedFile{blob: blob, analysis: analyze, result: result, bucket: classification.Bucket})
 	}
-	snapshot.Warnings = append(snapshot.Warnings, classifyRustModules(files, ignored, config)...)
+	snapshot.Warnings = append(snapshot.Warnings, classifyRustModules(files, ignored, packages, config)...)
 	for _, file := range files {
 		blob, analyze, result, bucket := file.blob, file.analysis, file.result, file.bucket
 		gitLineCoordinates := analyze.language != "typescript" || lang.CountLineTerminators(blob.Content, false) == lang.CountLineTerminators(blob.Content, true)
