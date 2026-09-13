@@ -322,3 +322,34 @@ func TestClassLambdaOwners(t *testing.T) {
 		t.Fatalf("nested = %#v", result.Functions[2])
 	}
 }
+
+func TestCollectionLambdaOwners(t *testing.T) {
+	source := []byte("handlers = {\"a\": lambda: 1, \"b\": lambda: 2}\nitems = [lambda: 1, (lambda: 2, lambda: 3)]\nfirst, second = (lambda: 1, lambda: 2)\n")
+	result, err := Analyze("collections.py", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, f := range result.Functions {
+		names = append(names, f.Name)
+	}
+	want := []string{`handlers["a"]`, `handlers["b"]`, "items[0]", "items[1][0]", "items[1][1]", "first", "second"}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("names = %q, want %q", names, want)
+	}
+}
+
+func TestCollectionCommentsAndCallbackArguments(t *testing.T) {
+	result, err := Analyze("collections.py", []byte("items = [lambda: 1, # ignored\n lambda: 2]\nowned = combine(lambda: 1, # ignored\n lambda: 2)\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, f := range result.Functions {
+		names = append(names, f.Name)
+	}
+	want := []string{"items[0]", "items[1]", "owned.cb:combine[0]", "owned.cb:combine[1]"}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("names = %q, want %q", names, want)
+	}
+}

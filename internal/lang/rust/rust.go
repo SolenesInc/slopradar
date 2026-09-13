@@ -1,6 +1,7 @@
 package rust
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 
@@ -84,6 +85,10 @@ func localName(node *sitter.Node, source []byte) string {
 			if binding := parent.ChildByFieldName("name"); binding != nil {
 				return compact(binding.Utf8Text(source)) + suffix
 			}
+		case "array_expression", "tuple_expression":
+			if index, _ := sequencePosition(parent, node); index >= 0 {
+				suffix = fmt.Sprintf("[%d]", index) + suffix
+			}
 		case "let_declaration":
 			if pattern := parent.ChildByFieldName("pattern"); pattern != nil {
 				return compact(pattern.Utf8Text(source)) + suffix
@@ -98,7 +103,11 @@ func localName(node *sitter.Node, source []byte) string {
 			}
 		case "call_expression":
 			if function, arguments := parent.ChildByFieldName("function"), parent.ChildByFieldName("arguments"); function != nil && arguments != nil && arguments.StartByte() <= node.StartByte() && arguments.EndByte() >= node.EndByte() {
-				suffix = ".cb:" + compact(function.Utf8Text(source)) + suffix
+				callback := ".cb:" + compact(function.Utf8Text(source))
+				if index, count := sequencePosition(arguments, node); count > 1 {
+					callback += fmt.Sprintf("[%d]", index)
+				}
+				suffix = callback + suffix
 			}
 		}
 	}
@@ -106,6 +115,22 @@ func localName(node *sitter.Node, source []byte) string {
 		return strings.TrimPrefix(suffix, ".")
 	}
 	return "(anonymous)"
+}
+
+func sequencePosition(parent, node *sitter.Node) (int, int) {
+	index, count := -1, 0
+	for i := uint(0); i < parent.NamedChildCount(); i++ {
+		child := parent.NamedChild(i)
+		switch child.Kind() {
+		case "line_comment", "block_comment", "attribute_item":
+			continue
+		}
+		if child.StartByte() <= node.StartByte() && child.EndByte() >= node.EndByte() {
+			index = count
+		}
+		count++
+	}
+	return index, count
 }
 
 func isTestScope(node *sitter.Node, source []byte) bool {

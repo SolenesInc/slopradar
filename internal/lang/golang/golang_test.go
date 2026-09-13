@@ -424,3 +424,13 @@ func f() { local := call(func() func() { return func() {} }); _ = local }
 		t.Fatalf("nested = %#v", result.Functions[3])
 	}
 }
+
+func TestCallbackArgumentPositions(t *testing.T) {
+	result, err := Analyze("arguments.go", []byte("package fixture; var owned = combine(func() {}, func() {})"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Functions[0].Name != "owned.cb:combine[0]" || result.Functions[1].Name != "owned.cb:combine[1]" {
+		t.Fatalf("functions = %#v", result.Functions)
+	}
+}

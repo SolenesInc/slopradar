@@ -166,9 +166,10 @@ func (r *moduleResolver) invalidPath(from int, module, name string) {
 }
 
 func (r *moduleResolver) crateRoot(file string) bool {
-	if path.Base(file) == "build.rs" {
-		dir := path.Dir(file)
-		return dir == "." || r.packages[dir]
+	for directory := path.Dir(file); directory != "."; directory = path.Dir(directory) {
+		if r.packages[directory] {
+			return rustCrateRoot(strings.TrimPrefix(file, directory+"/"))
+		}
 	}
 	return rustCrateRoot(file)
 }
@@ -178,21 +179,22 @@ func rustCrateRoot(file string) bool {
 	if rustTargetDirectory(dir) {
 		return true
 	}
+	if file == "build.rs" {
+		return true
+	}
 	if base != "main.rs" && base != "lib.rs" {
 		return false
 	}
-	if dir == "." || path.Base(dir) == "src" {
+	if dir == "." || dir == "src" {
 		return true
 	}
 	return base == "main.rs" && rustTargetDirectory(path.Dir(dir))
 }
 
 func rustTargetDirectory(dir string) bool {
-	switch path.Base(dir) {
-	case "tests", "examples", "benches":
+	switch dir {
+	case "tests", "examples", "benches", "src/bin":
 		return true
-	case "bin":
-		return path.Base(path.Dir(dir)) == "src"
 	default:
 		return false
 	}

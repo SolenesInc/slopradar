@@ -273,8 +273,12 @@ func functionName(node ast.Node, parents map[ast.Node]ast.Node, source []byte) s
 				}
 			}
 		case *ast.CallExpr:
-			if expressionIndex(owner.Args, node) >= 0 {
-				suffix = ".cb:" + compact(sourceText(owner.Fun, source)) + suffix
+			if index := expressionIndex(owner.Args, node); index >= 0 {
+				callback := ".cb:" + compact(sourceText(owner.Fun, source))
+				if len(owner.Args) > 1 {
+					callback += fmt.Sprintf("[%d]", index)
+				}
+				suffix = callback + suffix
 			}
 		case *ast.FuncLit, *ast.FuncDecl:
 			return anonymousName(suffix)

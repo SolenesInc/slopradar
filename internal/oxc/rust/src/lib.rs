@@ -6,7 +6,7 @@ use std::{
     ptr,
 };
 
-use oxc_allocator::Allocator;
+use oxc_allocator::{Allocator, Vec as ArenaVec};
 use oxc_ast::ast::*;
 use oxc_ast_visit::{Visit, walk};
 use oxc_parser::{ParseOptions, Parser, config::TokensParserConfig};
@@ -593,17 +593,49 @@ impl<'a> Visit<'a> for MetricVisitor<'_> {
         });
     }
 
+    fn visit_array_expression(&mut self, array: &ArrayExpression<'a>) {
+        let owner = self.hint();
+        for (index, element) in array.elements.iter().enumerate() {
+            let hint = if owner == "(anonymous)" {
+                format!("[{index}]")
+            } else {
+                format!("{owner}[{index}]")
+            };
+            self.with_hint(hint, |visitor| {
+                visitor.visit_array_expression_element(element)
+            });
+        }
+    }
+
+    fn visit_arguments(&mut self, arguments: &ArenaVec<'a, Argument<'a>>) {
+        let owner = self.hint();
+        for (index, argument) in arguments.iter().enumerate() {
+            let hint = if arguments.len() > 1 {
+                format!("{owner}[{index}]")
+            } else {
+                owner.clone()
+            };
+            self.with_hint(hint, |visitor| visitor.visit_argument(argument));
+        }
+    }
+
     fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
-        let callee = self.callee_for(call.callee.span());
-        self.with_hint(self.callback_name(callee), |visitor| {
-            walk::walk_call_expression(visitor, call)
-        });
+        let hint = self.callback_name(self.callee_for(call.callee.span()));
+        self.visit_expression(&call.callee);
+        if let Some(arguments) = &call.type_arguments {
+            self.visit_ts_type_parameter_instantiation(arguments);
+        }
+        self.with_hint(hint, |visitor| visitor.visit_arguments(&call.arguments));
     }
 
     fn visit_new_expression(&mut self, expression: &NewExpression<'a>) {
-        let callee = self.callee_for(expression.callee.span());
-        self.with_hint(self.callback_name(callee), |visitor| {
-            walk::walk_new_expression(visitor, expression)
+        let hint = self.callback_name(self.callee_for(expression.callee.span()));
+        self.visit_expression(&expression.callee);
+        if let Some(arguments) = &expression.type_arguments {
+            self.visit_ts_type_parameter_instantiation(arguments);
+        }
+        self.with_hint(hint, |visitor| {
+            visitor.visit_arguments(&expression.arguments)
         });
     }
 
@@ -744,6 +776,33 @@ mod tests {
         assert_eq!(analysis.functions[2].name, "outer");
         assert_eq!(analysis.functions[2].nested[0].name, "local.shared");
         assert_eq!(analysis.functions[2].nested[1].name, "declared");
+    }
+
+    #[test]
+    fn collections_and_callback_arguments_keep_positions() {
+        let analysis = analyze_source(
+            "collections.ts",
+            "const items = [() => 1, [() => 2, () => 3]]; const owned = combine(() => 1, () => 2); const immediate = (() => 1)(); const created = new Factory(() => 1, () => 2);",
+        );
+        assert_eq!(analysis.status, Status::Ok);
+        let names = analysis
+            .functions
+            .iter()
+            .map(|f| f.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                "items[0]",
+                "items[1][0]",
+                "items[1][1]",
+                "owned.cb:combine[0]",
+                "owned.cb:combine[1]",
+                "immediate",
+                "created.cb:Factory[0]",
+                "created.cb:Factory[1]"
+            ]
+        );
     }
 
     #[test]

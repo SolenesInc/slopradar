@@ -157,8 +157,10 @@ for each snapshot, including when an unchanged child comes from the cache;
 parent-only scope changes appear in the diff. File-level `#![cfg(test)]` also
 marks the file and its child modules as tests. Module resolution uses only
 analyzed files, without running Cargo or expanding macros. Crate roots follow
-standard Cargo entry-point layouts (`src/lib.rs`, `src/main.rs`, `build.rs`, binaries,
-examples, benches, and integration tests); custom Cargo target paths are not
+standard Cargo entry-point layouts relative to the nearest `Cargo.toml` directory
+(or the snapshot root for standalone sources): `src/lib.rs`, `src/main.rs`,
+`build.rs`, binaries,
+examples, benches, and integration tests. Custom Cargo target paths are not
 interpreted. Build-script roots use `Cargo.toml` path metadata even when source
 files are generated or excluded. Nested files named `main.rs` or `lib.rs` remain
 ordinary modules.
@@ -218,9 +220,14 @@ provides that context.
 
 JavaScript and TypeScript class and object-literal members also retain their
 owner, such as `Worker.run` and `worker.handlers.run`. Object ownership follows
-direct variable, assignment, and nested-property paths. It stops at function
-and callback boundaries, and an explicit function-expression name takes
-precedence.
+variable, assignment, nested-property, and named-expression paths, such as
+`holder.child.Inner.run`. Function boundaries stop owner inheritance. Callbacks
+retain their binding and callee, such as `task.cb:map`.
+
+Collection functions retain their key or position in the literal, such as
+`handlers["a"]` and `items[0]`. Calls with multiple arguments also retain argument
+positions, such as `task.cb:combine[1]`, so exchanging two callbacks does not hide
+their individual changes.
 
 ## Baselines
 

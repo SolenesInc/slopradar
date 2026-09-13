@@ -1,6 +1,7 @@
 package python
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 
@@ -59,8 +60,26 @@ func localName(node *sitter.Node, source []byte) string {
 		return text(node.ChildByFieldName("name"), source)
 	}
 	suffix := ""
-	for parent := node.Parent(); parent != nil; parent = parent.Parent() {
+	for child, parent := node, node.Parent(); parent != nil; child, parent = parent, parent.Parent() {
 		switch parent.Kind() {
+		case "pair":
+			if key := parent.ChildByFieldName("key"); key != nil && contains(parent.ChildByFieldName("value"), node) {
+				suffix = "[" + key.Utf8Text(source) + "]" + suffix
+			}
+		case "dictionary":
+			if child.Kind() != "pair" || !contains(child.ChildByFieldName("value"), node) {
+				if index, _ := sequencePosition(parent, node); index >= 0 {
+					suffix = fmt.Sprintf("[entry:%d]", index) + suffix
+				}
+			}
+		case "list", "tuple", "set", "expression_list":
+			assignment := parent.Parent()
+			if assignment != nil && assignment.Kind() == "assignment" && destructured(assignment.ChildByFieldName("left")) && contains(parent, assignment.ChildByFieldName("right")) {
+				continue
+			}
+			if index, _ := sequencePosition(parent, node); index >= 0 {
+				suffix = fmt.Sprintf("[%d]", index) + suffix
+			}
 		case "assignment":
 			if target := assignmentTarget(parent, node, source); target != "" {
 				return target + suffix
@@ -71,7 +90,11 @@ func localName(node *sitter.Node, source []byte) string {
 			}
 		case "call":
 			if callee, arguments := parent.ChildByFieldName("function"), parent.ChildByFieldName("arguments"); callee != nil && contains(arguments, node) {
-				suffix = ".cb:" + strings.Join(strings.Fields(callee.Utf8Text(source)), "") + suffix
+				callback := ".cb:" + strings.Join(strings.Fields(callee.Utf8Text(source)), "")
+				if index, count := sequencePosition(arguments, node); count > 1 {
+					callback += fmt.Sprintf("[%d]", index)
+				}
+				suffix = callback + suffix
 			}
 		case "lambda", "function_definition":
 			return callbackSuffix(suffix)
@@ -88,34 +111,39 @@ func callbackSuffix(suffix string) string {
 }
 
 func assignmentTarget(owner, lambda *sitter.Node, source []byte) string {
-	targets := owner.ChildByFieldName("left")
-	values := owner.ChildByFieldName("right")
-	if targets == nil || values == nil || !contains(values, lambda) {
+	targets, values := owner.ChildByFieldName("left"), owner.ChildByFieldName("right")
+	if targets == nil || !contains(values, lambda) {
 		return ""
 	}
-	index := 0
-	if values.Kind() == "expression_list" {
-		index = -1
-		for i := uint(0); i < values.NamedChildCount(); i++ {
-			if contains(values.NamedChild(i), lambda) {
-				index = int(i)
-				break
-			}
-		}
-		if index < 0 {
-			return ""
+	if !destructured(targets) {
+		return strings.TrimSpace(targets.Utf8Text(source))
+	}
+	switch values.Kind() {
+	case "expression_list", "tuple", "list":
+		if index, _ := sequencePosition(values, lambda); index >= 0 && uint(index) < targets.NamedChildCount() {
+			return strings.TrimSpace(targets.NamedChild(uint(index)).Utf8Text(source))
 		}
 	}
-	if targets.Kind() != "pattern_list" && targets.Kind() != "tuple_pattern" {
-		if index == 0 {
-			return strings.TrimSpace(targets.Utf8Text(source))
+	return strings.TrimSpace(targets.Utf8Text(source))
+}
+
+func destructured(node *sitter.Node) bool {
+	return node != nil && (node.Kind() == "pattern_list" || node.Kind() == "tuple_pattern" || node.Kind() == "list_pattern")
+}
+
+func sequencePosition(parent, node *sitter.Node) (int, int) {
+	index, count := -1, 0
+	for i := uint(0); i < parent.NamedChildCount(); i++ {
+		child := parent.NamedChild(i)
+		if child.Kind() == "comment" {
+			continue
 		}
-		return ""
+		if contains(child, node) {
+			index = count
+		}
+		count++
 	}
-	if uint(index) >= targets.NamedChildCount() {
-		return ""
-	}
-	return strings.TrimSpace(targets.NamedChild(uint(index)).Utf8Text(source))
+	return index, count
 }
 
 func enclosingClass(node *sitter.Node, source []byte) string {

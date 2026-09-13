@@ -302,3 +302,18 @@ func TestCallbackNamesRetainAssignments(t *testing.T) {
 		t.Fatalf("nested = %#v", result.Functions[1])
 	}
 }
+
+func TestCollectionAndArgumentClosureOwners(t *testing.T) {
+	result, err := Analyze("collections.rs", []byte("fn f() { let items = [|| {}, /* ignored */ || {}]; let pair = (|| {}, (|| {}, || {})); let owned = combine(|| {}, /* ignored */ || {}); }"))
+	if err != nil || len(result.Warnings) != 0 {
+		t.Fatalf("analyze: %v; warnings: %v", err, result.Warnings)
+	}
+	var names []string
+	for _, f := range result.Functions[0].Nested {
+		names = append(names, f.Name)
+	}
+	want := []string{"items[0]", "items[1]", "pair[0]", "pair[1][0]", "pair[1][1]", "owned.cb:combine[0]", "owned.cb:combine[1]"}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("names = %q, want %q", names, want)
+	}
+}

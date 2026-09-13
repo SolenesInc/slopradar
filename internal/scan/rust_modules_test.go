@@ -57,6 +57,8 @@ func TestRustExternalModuleScopes(t *testing.T) {
 		{"build script root", map[string]string{"build.rs": "mod helper; fn main() {}", "helper.rs": "fn helper() {}"}, nil, false},
 		{"workspace build script root", map[string]string{"crates/demo/Cargo.toml": "[package]\nname=\"demo\"\nversion=\"0.1.0\"", "crates/demo/build.rs": "mod helper; fn main() {}", "crates/demo/helper.rs": "fn helper() {}", "crates/demo/src/lib.rs": "fn public() {}"}, nil, false},
 		{"nested build is a module", map[string]string{"src/lib.rs": "#[cfg(test)] mod build;", "src/build.rs": "mod child; fn entry() {}", "src/build/child.rs": "fn child() {}"}, []string{"src/build.rs", "src/build/child.rs"}, false},
+		{"nested src lib module", map[string]string{"Cargo.toml": "[package]", "src/lib.rs": "#[cfg(test)] mod foo;", "src/foo.rs": "mod src;", "src/foo/src/mod.rs": "mod lib;", "src/foo/src/lib.rs": "mod child; fn inner() {}", "src/foo/src/lib/child.rs": "fn child() {}"}, []string{"src/foo/src/lib.rs", "src/foo/src/lib/child.rs"}, false},
+		{"nested package root", map[string]string{"crates/demo/Cargo.toml": "[package]", "crates/demo/src/lib.rs": "#[cfg(test)] mod child;", "crates/demo/src/child.rs": "fn child() {}"}, []string{"crates/demo/src/child.rs"}, false},
 		{"unrooted cycle", map[string]string{"src/a.rs": "#[path=\"b.rs\"] mod b; fn a() {}", "src/b.rs": "#[path=\"a.rs\"] mod a; fn b() {}"}, nil, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
