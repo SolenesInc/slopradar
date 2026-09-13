@@ -1,6 +1,7 @@
 package python
 
 import (
+	"slices"
 	"strings"
 
 	sitter "github.com/tree-sitter/go-tree-sitter"
@@ -106,15 +107,17 @@ func assignmentTarget(owner, lambda *sitter.Node, source []byte) string {
 }
 
 func enclosingClass(node *sitter.Node, source []byte) string {
+	var names []string
 	for parent := node.Parent(); parent != nil; parent = parent.Parent() {
 		if parent.Kind() == "function_definition" {
-			return ""
+			break
 		}
 		if parent.Kind() == "class_definition" {
-			return text(parent.ChildByFieldName("name"), source)
+			names = append(names, text(parent.ChildByFieldName("name"), source))
 		}
 	}
-	return ""
+	slices.Reverse(names)
+	return strings.Join(names, ".")
 }
 
 func isComment(node *sitter.Node, source []byte) bool {

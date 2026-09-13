@@ -170,8 +170,16 @@ func leadingComment(content []byte, extension string) ([]byte, []byte, bool) {
 	hashComment := extension == ".py" && bytes.HasPrefix(content, []byte("#"))
 	shebang := bytes.HasPrefix(content, []byte("#!")) && !bytes.HasPrefix(content, []byte("#!["))
 	if bytes.HasPrefix(content, []byte("//")) || hashComment || shebang {
-		comment, rest, _ := bytes.Cut(content, []byte{'\n'})
-		return comment, rest, true
+		terminators := "\n"
+		switch extension {
+		case ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs":
+			terminators = "\n\r\u2028\u2029"
+		}
+		end := bytes.IndexAny(content, terminators)
+		if end < 0 {
+			return content, nil, true
+		}
+		return content[:end], content[end:], true
 	}
 	var opener, closer []byte
 	switch {

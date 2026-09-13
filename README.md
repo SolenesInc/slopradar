@@ -156,6 +156,8 @@ JSON itself; a literal sequence such as `\xFF` is written as `\\xFF`.
 Generated files are skipped when a leading comment contains Go's
 `Code generated … DO NOT EDIT.`, `@generated`, or `linguist-generated` marker.
 Marker text inside a string literal does not exclude a handwritten file.
+JavaScript line comments end at LF, CRLF, CR, U+2028, or U+2029, so marker
+strings on the following source line stay outside the comment.
 Generator output without a marker must be listed in `excludes`.
 
 ## Languages and decision points
@@ -181,6 +183,11 @@ Rust method names include their owner: `Worker::run` for an inherent method,
 `Service::run` for a trait default, and `<Worker as Service>::run` for a trait
 implementation. Nested test functions retain their test bucket in drill-down
 rows; totals still include only top-level functions.
+
+Inline Rust modules and nested Python classes retain their complete owner paths,
+such as `alpha::inner::run` and `Outer.Inner.run`. Function boundaries stop owner
+inheritance for nested local functions; their enclosing function row already
+provides that context.
 
 JavaScript and TypeScript class and object-literal members also retain their
 owner, such as `Worker.run` and `worker.handlers.run`. Object ownership follows

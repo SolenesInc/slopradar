@@ -1,0 +1,84 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"testing"
+
+	"github.com/SolenesInc/slopradar/internal/model"
+)
+
+func TestDiffRetainsCompleteLexicalOwner(t *testing.T) {
+	for _, test := range []struct {
+		file, before, after, name string
+		line                      int
+	}{
+		{"modules.rs", "mod alpha {\n mod inner {\n  fn run() { if first {} }\n }\n}\nmod beta {\n fn run() { if first {} if second {} }\n}\n", "mod alpha {\n mod inner {\n  fn run() { if first {} if second {} }\n }\n}\nmod beta {\n fn run() { if first {} if second {} }\n}\n", "alpha::inner::run", 3},
+		{"classes.py", "class OuterA:\n class Inner:\n  def run(self):\n   if first: return 1\nclass OuterB:\n class Inner:\n  def run(self):\n   if first: return 1\n   if second: return 2\n", "class OuterA:\n class Inner:\n  def run(self):\n   if first: return 1\n   if second: return 2\nclass OuterB:\n class Inner:\n  def run(self):\n   if first: return 1\n   if second: return 2\n", "OuterA.Inner.run", 3},
+	} {
+		t.Run(test.file, func(t *testing.T) {
+			dir := t.TempDir()
+			gitCommand(t, dir, "init", "-b", "main")
+			gitCommand(t, dir, "config", "user.name", "Slopradar Test")
+			gitCommand(t, dir, "config", "user.email", "test@slopradar.invalid")
+			writeFile(t, dir, test.file, test.before)
+			gitCommand(t, dir, "add", ".")
+			gitCommand(t, dir, "commit", "-m", "before")
+			writeFile(t, dir, test.file, test.after)
+			gitCommand(t, dir, "add", ".")
+			gitCommand(t, dir, "commit", "-m", "after")
+			t.Chdir(dir)
+			var output bytes.Buffer
+			if err := run(context.Background(), []string{"diff", "--base", "HEAD^", "--head", "HEAD", "--format=json", "--no-cache"}, &output); err != nil {
+				t.Fatal(err)
+			}
+			var got model.Diff
+			if err := json.Unmarshal(output.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			if len(got.Functions) != 1 {
+				t.Fatalf("function deltas = %#v", got.Functions)
+			}
+			f := got.Functions[0]
+			if f.Name != test.name || f.Before == nil || f.After == nil || f.Before.Line != test.line || f.After.Line != test.line || f.Before.CC != 2 || f.After.CC != 3 {
+				t.Fatalf("function delta = %#v", f)
+			}
+		})
+	}
+}
+
+func TestScanGeneratedMarkersRespectJavaScriptTerminators(t *testing.T) {
+	dir := t.TempDir()
+	terminators := []string{"\n", "\r\n", "\r", "\u2028", "\u2029"}
+	for index, terminator := range terminators {
+		writeFile(t, dir, fmt.Sprintf("handwritten%d.ts", index), "// header"+terminator+"const marker = \"@generated\"; function visible() {}\n")
+		writeFile(t, dir, fmt.Sprintf("generated%d.ts", index), "// @generated"+terminator+"function hidden() {}\n")
+	}
+	gitCommand(t, dir, "init", "-b", "main")
+	gitCommand(t, dir, "config", "user.name", "Slopradar Test")
+	gitCommand(t, dir, "config", "user.email", "test@slopradar.invalid")
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "terminator fixtures")
+	t.Chdir(dir)
+	for _, target := range []string{dir, "HEAD"} {
+		var output bytes.Buffer
+		if err := run(context.Background(), []string{"scan", target, "--format=json", "--no-cache"}, &output); err != nil {
+			t.Fatal(err)
+		}
+		var got model.Snapshot
+		if err := json.Unmarshal(output.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Functions) != len(terminators) {
+			t.Fatalf("scan %s functions = %#v", target, got.Functions)
+		}
+		for _, f := range got.Functions {
+			if !strings.HasPrefix(f.File, "handwritten") || f.Name != "visible" || f.Line != 2 {
+				t.Fatalf("function = %#v", f)
+			}
+		}
+	}
+}

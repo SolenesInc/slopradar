@@ -116,6 +116,23 @@ outer = lambda: (lambda: 5)
 	}
 }
 
+func TestCompleteClassPathsStopAtFunctionBoundaries(t *testing.T) {
+	result, err := Analyze("owners.py", []byte("class OuterA:\n class Inner:\n  def run(self): pass\nclass OuterB:\n class Inner:\n  def run(self): pass\ndef factory():\n class Local:\n  def run(self): pass\n def helper(): pass\n"))
+	if err != nil || len(result.Warnings) != 0 {
+		t.Fatalf("analyze: %v; warnings %v", err, result.Warnings)
+	}
+	var names []string
+	for _, f := range result.Functions {
+		names = append(names, f.Name)
+		for _, nested := range f.Nested {
+			names = append(names, nested.Name)
+		}
+	}
+	if !reflect.DeepEqual(names, []string{"OuterA.Inner.run", "OuterB.Inner.run", "factory", "Local.run", "helper"}) {
+		t.Fatalf("names = %#v", names)
+	}
+}
+
 func TestSuiteStructurePreventsFalseExactClone(t *testing.T) {
 	first := pythonCloneFixture("        ", "    ", 3)
 	second := pythonCloneFixture("        ", "    ", 2)

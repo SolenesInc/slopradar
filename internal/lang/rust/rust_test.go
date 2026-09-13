@@ -223,6 +223,24 @@ func collectNamedKinds(node *sitter.Node, kinds map[string]int) {
 	}
 }
 
+func TestInlineModulePathsRetainTraitAndFunctionOwners(t *testing.T) {
+	result, err := Analyze("owners.rs", []byte("mod alpha { mod inner { fn run() {} trait Service { fn run(&self) {} } struct Worker; impl Worker { fn run() {} } impl Service for Worker { fn run(&self) {} } fn outer() { fn helper() {} } } } mod beta { fn run() {} }"))
+	if err != nil || len(result.Warnings) != 0 {
+		t.Fatalf("analyze: %v; warnings %v", err, result.Warnings)
+	}
+	var names []string
+	for _, f := range result.Functions {
+		names = append(names, f.Name)
+		for _, nested := range f.Nested {
+			names = append(names, nested.Name)
+		}
+	}
+	want := []string{"alpha::inner::run", "alpha::inner::Service::run", "alpha::inner::Worker::run", "alpha::inner::<Worker as Service>::run", "alpha::inner::outer", "helper", "beta::run"}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("names = %#v; want %#v", names, want)
+	}
+}
+
 func TestTraitMethodsHaveDistinctOwners(t *testing.T) {
 	source := []byte(`trait A { fn run(&self) {} }
 trait B { fn run(&self) {} }

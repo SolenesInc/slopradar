@@ -27,7 +27,7 @@
   },
   {
     "file": "testdata/rust/functions.rs",
-    "name": "test_only",
+    "name": "tests::test_only",
     "bucket": "tests",
     "line": 32,
     "cc": 1,

@@ -1,6 +1,7 @@
 package rust
 
 import (
+	"slices"
 	"strings"
 
 	sitter "github.com/tree-sitter/go-tree-sitter"
@@ -42,6 +43,17 @@ func decision(node *sitter.Node, source []byte) int {
 }
 
 func name(node *sitter.Node, source []byte) string {
+	var modules []string
+	for parent := node.Parent(); parent != nil && !isFunction(parent); parent = parent.Parent() {
+		if parent.Kind() == "mod_item" {
+			modules = append(modules, text(parent.ChildByFieldName("name"), source))
+		}
+	}
+	slices.Reverse(modules)
+	return strings.Join(append(modules, localName(node, source)), "::")
+}
+
+func localName(node *sitter.Node, source []byte) string {
 	if node.Kind() == "function_item" {
 		functionName := text(node.ChildByFieldName("name"), source)
 		for parent := node.Parent(); parent != nil; parent = parent.Parent() {

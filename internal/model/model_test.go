@@ -128,6 +128,31 @@ func TestConfiguredTestGlobsApplyToEveryLanguage(t *testing.T) {
 	}
 }
 
+func TestJavaScriptGeneratedHeadersRespectAllTerminators(t *testing.T) {
+	for _, extension := range []string{".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"} {
+		for _, terminator := range []string{"\n", "\r\n", "\r", "\u2028", "\u2029"} {
+			for _, header := range []string{"// ordinary header", "#!/usr/bin/env node"} {
+				file := "handwritten" + extension
+				source := header + terminator + `const marker = "@generated";`
+				if Classify(file, []byte(source), Config{}).Generated {
+					t.Fatalf("%s marker outside %q comment after %q was treated as generated", file, header, terminator)
+				}
+				generated := header + terminator + "// @generated\nconst value = 1;"
+				if !Classify(file, []byte(generated), Config{}).Generated {
+					t.Fatalf("%s genuine marker after %q was missed", file, terminator)
+				}
+			}
+		}
+	}
+	for _, extension := range []string{".go", ".rs"} {
+		for _, terminator := range []string{"\r", "\u2028", "\u2029"} {
+			if !Classify("source"+extension, []byte("// header"+terminator+"@generated"), Config{}).Generated {
+				t.Fatalf("%s line comment incorrectly ended at %q", extension, terminator)
+			}
+		}
+	}
+}
+
 func TestGeneratedMarkersMustAppearInComments(t *testing.T) {
 	content, err := os.ReadFile("classify.go")
 	if err != nil {
