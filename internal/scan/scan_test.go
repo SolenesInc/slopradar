@@ -345,7 +345,7 @@ func TestRevisionCacheSeparatesTypeScriptDeclarations(t *testing.T) {
 
 func gitForScan(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	command := exec.Command("git", append([]string{"-c", "maintenance.autoDetach=false", "-c", "gc.autoDetach=false", "-C", dir}, args...)...)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, output)
@@ -355,7 +355,7 @@ func gitForScan(t *testing.T, dir string, args ...string) string {
 
 func gitInputForScan(t *testing.T, dir, input string, args ...string) string {
 	t.Helper()
-	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	command := exec.Command("git", append([]string{"-c", "maintenance.autoDetach=false", "-c", "gc.autoDetach=false", "-C", dir}, args...)...)
 	command.Stdin = strings.NewReader(input)
 	output, err := command.CombinedOutput()
 	if err != nil {

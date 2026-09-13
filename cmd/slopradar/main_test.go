@@ -924,7 +924,7 @@ func functionByName(t *testing.T, result model.Diff, name string) model.Function
 
 func gitCommand(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	command := exec.Command("git", append([]string{"-c", "maintenance.autoDetach=false", "-c", "gc.autoDetach=false", "-C", dir}, args...)...)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, output)
@@ -934,7 +934,7 @@ func gitCommand(t *testing.T, dir string, args ...string) string {
 
 func gitCommandAt(t *testing.T, dir, date string, args ...string) string {
 	t.Helper()
-	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	command := exec.Command("git", append([]string{"-c", "maintenance.autoDetach=false", "-c", "gc.autoDetach=false", "-C", dir}, args...)...)
 	command.Env = append(os.Environ(), "GIT_AUTHOR_DATE="+date, "GIT_COMMITTER_DATE="+date)
 	output, err := command.CombinedOutput()
 	if err != nil {
