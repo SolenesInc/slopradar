@@ -120,7 +120,11 @@ func buildFunction(file string, source []byte, rules Rules, comments []Span, ite
 		nested = append(nested, buildFunction(file, source, rules, comments, child))
 	}
 	sloc := countSLOC(source, int(item.node.StartByte()), int(item.node.EndByte()), comments)
-	return model.NewFunction(file, item.name, int(item.node.StartPosition().Row)+1, cc, sloc, nested)
+	function := model.NewFunction(file, item.name, int(item.node.StartPosition().Row)+1, cc, sloc, nested)
+	if item.bucket == model.Tests {
+		function.Bucket = model.Tests
+	}
+	return function
 }
 
 func decisions(node *sitter.Node, source []byte, rules Rules) int {

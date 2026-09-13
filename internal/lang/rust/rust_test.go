@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
 
 	sitter "github.com/tree-sitter/go-tree-sitter"
@@ -165,7 +167,7 @@ extern "C" fn exported() {}
 	if len(result.Warnings) != 0 {
 		t.Fatalf("warnings = %#v", result.Warnings)
 	}
-	want := []string{"defaulted", "Worker::required", "exported"}
+	want := []string{"Service::defaulted", "<Worker as Service>::required", "exported"}
 	got := make([]string, len(result.Functions))
 	for i, function := range result.Functions {
 		got[i] = function.Name
@@ -195,5 +197,47 @@ func collectNamedKinds(node *sitter.Node, kinds map[string]int) {
 	kinds[node.Kind()]++
 	for i := uint(0); i < node.NamedChildCount(); i++ {
 		collectNamedKinds(node.NamedChild(i), kinds)
+	}
+}
+
+func TestTraitMethodsHaveDistinctOwners(t *testing.T) {
+	source := []byte(`trait A { fn run(&self) {} }
+trait B { fn run(&self) {} }
+struct Worker;
+impl Worker { fn run(&self) {} }
+impl A for Worker { fn run(&self) {} }
+impl B for Worker { fn run(&self) {} }
+`)
+	result, err := Analyze("owners.rs", source)
+	if err != nil || len(result.Warnings) != 0 {
+		t.Fatalf("analyze: %v, warnings: %v", err, result.Warnings)
+	}
+	got := make([]string, len(result.Functions))
+	for i, function := range result.Functions {
+		got[i] = function.Name
+	}
+	want := []string{"A::run", "B::run", "Worker::run", "<Worker as A>::run", "<Worker as B>::run"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("names = %v, want %v", got, want)
+	}
+}
+
+func TestClosureOwnersSurviveWrappingAndStopAtFunctions(t *testing.T) {
+	for _, depth := range []int{0, 6, 32} {
+		t.Run(strconv.Itoa(depth), func(t *testing.T) {
+			wrapped := strings.Repeat("(", depth) + "|| work()" + strings.Repeat(")", depth)
+			source := []byte("fn main() { let handler = " + wrapped + "; let outer = || { " + wrapped + " }; }")
+			result, err := Analyze("closures.rs", source)
+			if err != nil || len(result.Warnings) != 0 {
+				t.Fatalf("analyze: %v, warnings: %v", err, result.Warnings)
+			}
+			if len(result.Functions) != 1 || len(result.Functions[0].Nested) != 2 {
+				t.Fatalf("functions = %#v", result.Functions)
+			}
+			nested := result.Functions[0].Nested
+			if nested[0].Name != "handler" || nested[1].Name != "outer" || len(nested[1].Nested) != 1 || nested[1].Nested[0].Name != "(anonymous)" {
+				t.Fatalf("closure owners = %#v", nested)
+			}
+		})
 	}
 }

@@ -49,12 +49,22 @@ func name(node *sitter.Node, source []byte) string {
 				break
 			}
 			if parent.Kind() == "impl_item" {
-				return compact(text(parent.ChildByFieldName("type"), source)) + "::" + functionName
+				owner := compact(text(parent.ChildByFieldName("type"), source))
+				if trait := parent.ChildByFieldName("trait"); trait != nil {
+					owner = "<" + owner + " as " + compact(trait.Utf8Text(source)) + ">"
+				}
+				return owner + "::" + functionName
+			}
+			if parent.Kind() == "trait_item" {
+				return text(parent.ChildByFieldName("name"), source) + "::" + functionName
 			}
 		}
 		return functionName
 	}
-	for parent, depth := node.Parent(), 0; parent != nil && depth < 5; parent, depth = parent.Parent(), depth+1 {
+	for parent := node.Parent(); parent != nil; parent = parent.Parent() {
+		if isFunction(parent) {
+			break
+		}
 		switch parent.Kind() {
 		case "let_declaration":
 			if pattern := parent.ChildByFieldName("pattern"); pattern != nil {

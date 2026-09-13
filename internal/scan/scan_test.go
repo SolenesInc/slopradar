@@ -52,6 +52,37 @@ func TestBlobsBuildsDeterministicBucketsAndSkippedFiles(t *testing.T) {
 	}
 }
 
+func TestNestedRustTestBucketsSurviveScanAndFileOverrides(t *testing.T) {
+	source := []byte(`fn outer() {
+    #[cfg(test)]
+    fn test_helper() { let nested = || {}; }
+    fn production_helper() {}
+}
+`)
+	for _, file := range []string{"src/fixture.rs", "tests/fixture.rs"} {
+		t.Run(file, func(t *testing.T) {
+			result, err := Blobs("fixture", []gitread.Blob{{BlobInfo: gitread.BlobInfo{Path: file, Size: int64(len(source))}, Content: source}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.Functions) != 1 || len(result.Functions[0].Nested) != 2 || len(result.Functions[0].Nested[0].Nested) != 1 {
+				t.Fatalf("functions = %#v", result.Functions)
+			}
+			outer := result.Functions[0]
+			bucket := model.Source
+			if strings.HasPrefix(file, "tests/") {
+				bucket = model.Tests
+			}
+			if outer.Bucket != bucket || outer.Nested[1].Bucket != bucket || outer.Nested[0].Bucket != model.Tests || outer.Nested[0].Nested[0].Bucket != model.Tests {
+				t.Fatalf("buckets = %#v", outer)
+			}
+			if result.Buckets[bucket].Functions != 1 {
+				t.Fatalf("nested rows entered totals: %#v", result.Buckets)
+			}
+		})
+	}
+}
+
 func TestDirectoryFiltersBeforeReadingContent(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Mkdir(filepath.Join(dir, "node_modules"), 0o755); err != nil {

@@ -201,6 +201,9 @@ func blobsWithConfig(rev string, blobs []gitread.Blob, config model.Config, skip
 }
 
 func withBucket(function model.Function, bucket model.Bucket) model.Function {
+	if function.Bucket == model.Tests {
+		bucket = model.Tests
+	}
 	function.Bucket = bucket
 	for i := range function.Nested {
 		function.Nested[i] = withBucket(function.Nested[i], bucket)

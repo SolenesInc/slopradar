@@ -28,6 +28,7 @@
   {
     "file": "testdata/rust/functions.rs",
     "name": "test_only",
+    "bucket": "tests",
     "line": 32,
     "cc": 1,
     "sloc": 3,
