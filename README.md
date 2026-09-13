@@ -275,6 +275,23 @@ assembled.
   measured largest source file (`925234` bytes) and largest handwritten source
   file (`256764` bytes).
 
+## Development
+
+Use Go 1.27 or newer and the same C compiler prerequisites as installation.
+Install [golangci-lint v2.13.2](https://github.com/golangci/golangci-lint/releases/tag/v2.13.2)
+to match CI, then run:
+
+```sh
+golangci-lint run ./...
+golangci-lint fmt --diff
+go test -race ./...
+```
+
+CI checks every push and pull request with the standard golangci-lint checks
+(Staticcheck, govet, errcheck, ineffassign, and unused), plus gofmt formatting.
+Run `golangci-lint fmt` to apply formatting locally. Tests and installation
+checks run on Linux and macOS, on both arm64 and amd64.
+
 ## Credits
 
 slopradar's mass and erosion model comes from

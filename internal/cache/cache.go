@@ -65,7 +65,7 @@ func (s *Store) Put(blobSHA, dialect string, result lang.Result) {
 		return
 	}
 	name := temporary.Name()
-	defer os.Remove(name)
+	defer func() { _ = os.Remove(name) }()
 	if _, err := temporary.Write(data); err != nil {
 		_ = temporary.Close()
 		return
