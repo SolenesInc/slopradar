@@ -27,7 +27,7 @@
   },
   {
     "file": "testdata/typescript/functions.ts",
-    "name": "serve",
+    "name": "Server.serve",
     "line": 18,
     "cc": 4,
     "sloc": 9,
