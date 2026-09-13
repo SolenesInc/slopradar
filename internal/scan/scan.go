@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -184,6 +185,7 @@ func blobsWithConfig(rev string, blobs []gitread.Blob, config model.Config, skip
 		if bucket == model.Tests {
 			sourceLines[model.Tests] = append(sourceLines[model.Tests], sourceLines[model.Source]...)
 			sort.Ints(sourceLines[model.Tests])
+			sourceLines[model.Tests] = slices.Compact(sourceLines[model.Tests])
 			sourceLines[model.Source] = nil
 			for i := range result.Tokens {
 				result.Tokens[i].Bucket = model.Tests

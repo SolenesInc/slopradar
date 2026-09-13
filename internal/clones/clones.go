@@ -521,12 +521,22 @@ func makePair(files []File, segments []segment, pair extentPair, id string) mode
 }
 
 func sourceLineCount(file File, lines model.Range) int {
-	count := 0
-	for _, bucket := range []model.Bucket{model.Source, model.Tests} {
-		bucketLines := file.SourceLines[bucket]
-		start := sort.SearchInts(bucketLines, lines.Start)
-		end := sort.SearchInts(bucketLines, lines.End+1)
-		count += end - start
+	source := file.SourceLines[model.Source]
+	tests := file.SourceLines[model.Tests]
+	source = source[sort.SearchInts(source, lines.Start):sort.SearchInts(source, lines.End+1)]
+	tests = tests[sort.SearchInts(tests, lines.Start):sort.SearchInts(tests, lines.End+1)]
+	count := len(source) + len(tests)
+	for i, j := 0, 0; i < len(source) && j < len(tests); {
+		switch {
+		case source[i] < tests[j]:
+			i++
+		case source[i] > tests[j]:
+			j++
+		default:
+			count--
+			i++
+			j++
+		}
 	}
 	return count
 }

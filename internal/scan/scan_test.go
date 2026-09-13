@@ -54,6 +54,65 @@ func TestBlobsBuildsDeterministicBucketsAndSkippedFiles(t *testing.T) {
 	}
 }
 
+func TestRustMixedScopeLinesRemainInBothBuckets(t *testing.T) {
+	source := []byte("fn prod() {} #[cfg(test)] fn helper() {}\n")
+	for _, file := range []string{"src/mixed.rs", "tests/mixed.rs"} {
+		t.Run(file, func(t *testing.T) {
+			result, err := Blobs("mixed", []gitread.Blob{{BlobInfo: gitread.BlobInfo{Path: file, Size: int64(len(source))}, Content: source}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantSourceFunctions, wantTestFunctions, wantSourceLines := 1, 1, 1
+			if strings.HasPrefix(file, "tests/") {
+				wantSourceFunctions, wantTestFunctions, wantSourceLines = 0, 2, 0
+			}
+			if result.Buckets[model.Source].Functions != wantSourceFunctions || result.Buckets[model.Tests].Functions != wantTestFunctions || result.Buckets[model.Source].SourceLines != wantSourceLines || result.Buckets[model.Tests].SourceLines != 1 {
+				t.Fatalf("mixed scope buckets = %+v", result.Buckets)
+			}
+		})
+	}
+}
+
+func TestRustMixedScopeCloneLengthsCountPhysicalLines(t *testing.T) {
+	for _, directory := range []string{"src", "tests"} {
+		for _, lineCount := range []int{clones.JscpdDefaultMinimumLines - 1, clones.JscpdDefaultMinimumLines} {
+			t.Run(fmt.Sprintf("%s_%d", directory, lineCount), func(t *testing.T) {
+				var source strings.Builder
+				for i := range lineCount {
+					fmt.Fprintf(&source, "fn prod%d() {} #[cfg(test)] fn helper%d() {}\n", i, i)
+				}
+				var blobs []gitread.Blob
+				for _, name := range []string{"a.rs", "b.rs"} {
+					blobs = append(blobs, gitread.Blob{BlobInfo: gitread.BlobInfo{Path: directory + "/" + name, Size: int64(source.Len())}, Content: []byte(source.String())})
+				}
+				result, err := Blobs("mixed", blobs)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if lineCount < clones.JscpdDefaultMinimumLines {
+					if len(result.Clones) != 0 {
+						t.Fatalf("shared lines inflated clone length: %+v", result.Clones)
+					}
+					return
+				}
+				if len(result.Clones) != 1 || result.Clones[0].Lines != lineCount {
+					t.Fatalf("clone lengths = %+v", result.Clones)
+				}
+				for _, bucket := range []model.Bucket{model.Source, model.Tests} {
+					want := lineCount * len(blobs)
+					if directory == "tests" && bucket == model.Source {
+						want = 0
+					}
+					totals := result.Buckets[bucket]
+					if totals.SourceLines != want || totals.CloneLines != want {
+						t.Fatalf("%s totals = %+v, want %d lines", bucket, totals, want)
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestNestedRustTestBucketsSurviveScanAndFileOverrides(t *testing.T) {
 	source := []byte(`fn outer() {
     #[cfg(all(test, unix))]

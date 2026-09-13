@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"unicode"
+	"unicode/utf8"
 
 	sitter "github.com/tree-sitter/go-tree-sitter"
 
@@ -233,6 +234,12 @@ func sourceLines(source []byte, comments, testSpans []Span, javascript bool) map
 			}
 		}
 	}
+	testBytes := make([]bool, len(content))
+	for _, span := range testSpans {
+		for i := span.StartByte; i < span.EndByte; i++ {
+			testBytes[i] = true
+		}
+	}
 	lines := map[model.Bucket][]int{model.Source: {}, model.Tests: {}}
 	whitespace := unicode.IsSpace
 	if javascript {
@@ -242,15 +249,23 @@ func sourceLines(source []byte, comments, testSpans []Span, javascript bool) map
 	lineNumber := 1
 	for lineStart <= len(content) {
 		lineEnd, terminatorWidth := nextLineTerminator(content, lineStart, javascript)
-		if len(bytes.TrimFunc(content[lineStart:lineEnd], whitespace)) != 0 {
-			bucket := model.Source
-			for _, span := range testSpans {
-				if lineStart < span.EndByte && lineEnd >= span.StartByte {
-					bucket = model.Tests
-					break
+		hasSource, hasTests := false, false
+		for offset := lineStart; offset < lineEnd; {
+			character, width := utf8.DecodeRune(content[offset:lineEnd])
+			if !whitespace(character) {
+				if testBytes[offset] {
+					hasTests = true
+				} else {
+					hasSource = true
 				}
 			}
-			lines[bucket] = append(lines[bucket], lineNumber)
+			offset += width
+		}
+		if hasSource {
+			lines[model.Source] = append(lines[model.Source], lineNumber)
+		}
+		if hasTests {
+			lines[model.Tests] = append(lines[model.Tests], lineNumber)
 		}
 		if terminatorWidth == 0 {
 			break

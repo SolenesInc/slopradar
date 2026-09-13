@@ -150,6 +150,10 @@ that prove an item requires a test build, such as `all(test, unix)` and
 unknown; their target or feature values are never guessed. These combinations
 follow the [Rust conditional compilation rules](https://doc.rust-lang.org/reference/conditional-compilation.html).
 
+A physical line containing both production and test-only code counts once in
+each bucket. File-wide test classification counts that shared line only once;
+clone pair lengths count distinct physical lines across both buckets.
+
 Rust test scope follows external `mod` declarations through `name.rs`,
 `name/mod.rs`, nested inline modules, and literal `#[path]` attributes. A file
 also reachable from production keeps its source bucket. Scope is recomputed
