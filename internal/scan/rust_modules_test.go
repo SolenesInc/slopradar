@@ -54,6 +54,9 @@ func TestRustExternalModuleScopes(t *testing.T) {
 		{"multifile tests root", map[string]string{"tests/demo/main.rs": "#[cfg(test)] mod child;", "tests/demo/child.rs": "fn child() {}"}, []string{"tests/demo/child.rs"}, false},
 		{"multifile examples root", map[string]string{"examples/demo/main.rs": "#[cfg(test)] mod child;", "examples/demo/child.rs": "fn child() {}"}, []string{"examples/demo/child.rs"}, false},
 		{"multifile benches root", map[string]string{"benches/demo/main.rs": "#[cfg(test)] mod child;", "benches/demo/child.rs": "fn child() {}"}, []string{"benches/demo/child.rs"}, false},
+		{"build script root", map[string]string{"build.rs": "mod helper; fn main() {}", "helper.rs": "fn helper() {}"}, nil, false},
+		{"workspace build script root", map[string]string{"crates/demo/build.rs": "mod helper; fn main() {}", "crates/demo/helper.rs": "fn helper() {}", "crates/demo/src/lib.rs": "fn public() {}"}, nil, false},
+		{"nested build is a module", map[string]string{"src/lib.rs": "#[cfg(test)] mod build;", "src/build.rs": "mod child; fn entry() {}", "src/build/child.rs": "fn child() {}"}, []string{"src/build.rs", "src/build/child.rs"}, false},
 		{"unrooted cycle", map[string]string{"src/a.rs": "#[path=\"b.rs\"] mod b; fn a() {}", "src/b.rs": "#[path=\"a.rs\"] mod a; fn b() {}"}, nil, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {

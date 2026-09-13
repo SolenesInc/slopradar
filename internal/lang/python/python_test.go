@@ -288,3 +288,20 @@ func boundaryLines(tokens []lang.Token) []int {
 	}
 	return lines
 }
+
+func TestCallbackNamesRetainAssignments(t *testing.T) {
+	result, err := Analyze("owners.py", []byte("first = wrap(lambda: 1)\nsecond = wrap(lambda: 2)\nnested = outer(inner(lambda: 3))\nparent = lambda: wrap(lambda: 4)\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, f := range result.Functions {
+		names = append(names, f.Name)
+	}
+	if !reflect.DeepEqual(names, []string{"first.cb:wrap", "second.cb:wrap", "nested.cb:outer.cb:inner", "parent"}) {
+		t.Fatalf("names = %q", names)
+	}
+	if result.Functions[3].Nested[0].Name != "cb:wrap" {
+		t.Fatalf("nested = %#v", result.Functions[3])
+	}
+}

@@ -300,22 +300,24 @@ fn code_lines(source: &str, comments: &[Span]) -> Vec<bool> {
             }
         }
     }
+    let content = String::from_utf8(bytes).expect("masked source remains UTF-8");
+    let bytes = content.as_bytes();
     let mut lines = Vec::new();
     let mut line_start = 0;
     loop {
         let mut line_end = line_start;
-        while line_end < bytes.len() && line_terminator_width(&bytes, line_end) == 0 {
+        while line_end < bytes.len() && line_terminator_width(bytes, line_end) == 0 {
             line_end += 1;
         }
         lines.push(
-            bytes[line_start..line_end]
-                .iter()
-                .any(|byte| !byte.is_ascii_whitespace()),
+            content[line_start..line_end]
+                .chars()
+                .any(|character| !oxc_syntax::identifier::is_white_space(character)),
         );
         if line_end == bytes.len() {
             break;
         }
-        line_start = line_end + line_terminator_width(&bytes, line_end);
+        line_start = line_end + line_terminator_width(bytes, line_end);
     }
     lines
 }
@@ -417,6 +419,13 @@ impl<'s> MetricVisitor<'s> {
             .chars()
             .filter(|character| !character.is_whitespace())
             .collect()
+    }
+
+    fn callback_name(&self, callee: String) -> String {
+        match self.hints.last() {
+            Some(owner) if owner != "(anonymous)" => format!("{owner}.cb:{callee}"),
+            _ => format!("cb:{callee}"),
+        }
     }
 
     fn class_name(&self, class: &Class<'_>) -> String {
@@ -566,14 +575,14 @@ impl<'a> Visit<'a> for MetricVisitor<'_> {
 
     fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
         let callee = self.callee_for(call.callee.span());
-        self.with_hint(format!("cb:{callee}"), |visitor| {
+        self.with_hint(self.callback_name(callee), |visitor| {
             walk::walk_call_expression(visitor, call)
         });
     }
 
     fn visit_new_expression(&mut self, expression: &NewExpression<'a>) {
         let callee = self.callee_for(expression.callee.span());
-        self.with_hint(format!("cb:{callee}"), |visitor| {
+        self.with_hint(self.callback_name(callee), |visitor| {
             walk::walk_new_expression(visitor, expression)
         });
     }
@@ -634,6 +643,50 @@ impl<'a> Visit<'a> for MetricVisitor<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn callback_names_retain_enclosing_owners() {
+        let analysis = analyze_source(
+            "owners.ts",
+            "const first = map(() => {}); const second = map(() => {}); assigned.target = new Promise(() => {}); const nested = outer(inner(() => {})); function f() { const local = map(() => () => 1); }",
+        );
+        assert_eq!(analysis.status, Status::Ok);
+        let names = analysis
+            .functions
+            .iter()
+            .map(|f| f.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                "first.cb:map",
+                "second.cb:map",
+                "assigned.target.cb:Promise",
+                "nested.cb:outer.cb:inner",
+                "f"
+            ]
+        );
+        assert_eq!(analysis.functions[4].nested[0].name, "local.cb:map");
+        assert_eq!(
+            analysis.functions[4].nested[0].nested[0].name,
+            "(anonymous)"
+        );
+    }
+
+    #[test]
+    fn ecmascript_whitespace_does_not_add_function_lines() {
+        for whitespace in [
+            '\u{a0}', '\u{1680}', '\u{2000}', '\u{202f}', '\u{205f}', '\u{3000}', '\u{feff}',
+        ] {
+            let source = format!("function f() {{\n{whitespace}\nreturn 1;\n}}");
+            let analysis = analyze_source("space.js", &source);
+            assert_eq!(analysis.status, Status::Ok);
+            assert_eq!(analysis.functions[0].sloc, 3, "{whitespace:?}");
+        }
+        let analysis = analyze_source("literal.js", "function f() { return `\n\u{85}\n`; }");
+        assert_eq!(analysis.status, Status::Ok);
+        assert_eq!(analysis.functions[0].sloc, 3);
+    }
 
     #[test]
     fn counts_every_function_span() {

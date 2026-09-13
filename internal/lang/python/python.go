@@ -54,23 +54,31 @@ func name(node *sitter.Node, source []byte) string {
 		}
 		return functionName
 	}
+	suffix := ""
 	for parent := node.Parent(); parent != nil; parent = parent.Parent() {
 		switch parent.Kind() {
 		case "assignment":
 			if target := assignmentTarget(parent, node, source); target != "" {
-				return target
+				return target + suffix
 			}
 		case "named_expression":
 			if target, value := parent.ChildByFieldName("name"), parent.ChildByFieldName("value"); target != nil && contains(value, node) {
-				return strings.TrimSpace(target.Utf8Text(source))
+				return strings.TrimSpace(target.Utf8Text(source)) + suffix
 			}
 		case "call":
 			if callee, arguments := parent.ChildByFieldName("function"), parent.ChildByFieldName("arguments"); callee != nil && contains(arguments, node) {
-				return "cb:" + strings.Join(strings.Fields(callee.Utf8Text(source)), "")
+				suffix = ".cb:" + strings.Join(strings.Fields(callee.Utf8Text(source)), "") + suffix
 			}
 		case "lambda", "function_definition":
-			return "(anonymous)"
+			return callbackSuffix(suffix)
 		}
+	}
+	return callbackSuffix(suffix)
+}
+
+func callbackSuffix(suffix string) string {
+	if suffix != "" {
+		return strings.TrimPrefix(suffix, ".")
 	}
 	return "(anonymous)"
 }

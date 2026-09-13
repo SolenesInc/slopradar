@@ -430,3 +430,27 @@ func TestHashbangExcludedFromSourceLines(t *testing.T) {
 		}
 	}
 }
+
+func TestECMAScriptWhitespaceLines(t *testing.T) {
+	for _, whitespace := range []string{"\u00a0", "\u1680", "\u2000", "\u202f", "\u205f", "\u3000", "\ufeff"} {
+		for _, suffix := range []string{"ts", "tsx", "js", "jsx", "mts", "cts", "mjs", "cjs"} {
+			source := []byte("function f() {\n" + whitespace + "\nreturn 1;\n}")
+			result, err := Analyze("space."+suffix, source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lines := lang.JavaScriptSourceLines(source, result.Comments, result.TestSpans)
+			if result.Functions[0].SLOC != 3 || !reflect.DeepEqual(lines[model.Source], []int{1, 3, 4}) {
+				t.Fatalf("%s/%q function=%#v lines=%v", suffix, whitespace, result.Functions, lines)
+			}
+		}
+	}
+	source := []byte("function f() { return `\n\u0085\n`; }")
+	result, err := Analyze("literal.js", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Functions[0].SLOC != 3 || len(lang.JavaScriptSourceLines(source, result.Comments, result.TestSpans)[model.Source]) != 3 {
+		t.Fatal("non-ECMAScript whitespace inside literal lost its source line")
+	}
+}

@@ -274,7 +274,7 @@ func functionName(node ast.Node, parents map[ast.Node]ast.Node, source []byte) s
 			}
 		case *ast.CallExpr:
 			if expressionIndex(owner.Args, node) >= 0 {
-				return "cb:" + compact(sourceText(owner.Fun, source)) + suffix
+				suffix = ".cb:" + compact(sourceText(owner.Fun, source)) + suffix
 			}
 		case *ast.FuncLit, *ast.FuncDecl:
 			return anonymousName(suffix)

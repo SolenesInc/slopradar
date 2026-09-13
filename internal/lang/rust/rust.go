@@ -74,28 +74,36 @@ func localName(node *sitter.Node, source []byte) string {
 		}
 		return functionName
 	}
+	suffix := ""
 	for parent := node.Parent(); parent != nil; parent = parent.Parent() {
 		if isFunction(parent) {
 			break
 		}
 		switch parent.Kind() {
+		case "const_item", "static_item":
+			if binding := parent.ChildByFieldName("name"); binding != nil {
+				return compact(binding.Utf8Text(source)) + suffix
+			}
 		case "let_declaration":
 			if pattern := parent.ChildByFieldName("pattern"); pattern != nil {
-				return compact(pattern.Utf8Text(source))
+				return compact(pattern.Utf8Text(source)) + suffix
 			}
 		case "assignment_expression":
 			if left := parent.ChildByFieldName("left"); left != nil {
-				return compact(left.Utf8Text(source))
+				return compact(left.Utf8Text(source)) + suffix
 			}
 		case "field_initializer":
 			if field := parent.ChildByFieldName("field"); field != nil {
-				return compact(field.Utf8Text(source))
+				suffix = "." + compact(field.Utf8Text(source)) + suffix
 			}
 		case "call_expression":
-			if function := parent.ChildByFieldName("function"); function != nil {
-				return "cb:" + compact(function.Utf8Text(source))
+			if function, arguments := parent.ChildByFieldName("function"), parent.ChildByFieldName("arguments"); function != nil && arguments != nil && arguments.StartByte() <= node.StartByte() && arguments.EndByte() >= node.EndByte() {
+				suffix = ".cb:" + compact(function.Utf8Text(source)) + suffix
 			}
 		}
+	}
+	if suffix != "" {
+		return strings.TrimPrefix(suffix, ".")
 	}
 	return "(anonymous)"
 }

@@ -3,6 +3,7 @@ package lang
 import (
 	"bytes"
 	"fmt"
+	"unicode"
 
 	sitter "github.com/tree-sitter/go-tree-sitter"
 
@@ -233,11 +234,15 @@ func sourceLines(source []byte, comments, testSpans []Span, javascript bool) map
 		}
 	}
 	lines := map[model.Bucket][]int{model.Source: {}, model.Tests: {}}
+	whitespace := unicode.IsSpace
+	if javascript {
+		whitespace = javaScriptWhitespace
+	}
 	lineStart := 0
 	lineNumber := 1
 	for lineStart <= len(content) {
 		lineEnd, terminatorWidth := nextLineTerminator(content, lineStart, javascript)
-		if len(bytes.TrimSpace(content[lineStart:lineEnd])) != 0 {
+		if len(bytes.TrimFunc(content[lineStart:lineEnd], whitespace)) != 0 {
 			bucket := model.Source
 			for _, span := range testSpans {
 				if lineStart < span.EndByte && lineEnd >= span.StartByte {
@@ -254,6 +259,10 @@ func sourceLines(source []byte, comments, testSpans []Span, javascript bool) map
 		lineNumber++
 	}
 	return lines
+}
+
+func javaScriptWhitespace(character rune) bool {
+	return character == '\t' || character == '\v' || character == '\f' || character == '\ufeff' || unicode.Is(unicode.Zs, character)
 }
 
 func nextLineTerminator(content []byte, start int, javascript bool) (int, int) {

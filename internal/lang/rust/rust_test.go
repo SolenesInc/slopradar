@@ -282,3 +282,23 @@ func TestClosureOwnersSurviveWrappingAndStopAtFunctions(t *testing.T) {
 		})
 	}
 }
+
+func TestCallbackNamesRetainAssignments(t *testing.T) {
+	result, err := Analyze("owners.rs", []byte("static FIRST: fn() = wrap(|| {});\nfn f() { let first = wrap(|| {}); let second = wrap(|| {}); let nested = outer(inner(|| {})); let parent = || wrap(|| {}); let object = Hooks { run: wrap(|| {}) }; let immediate = (|| {})(); }"))
+	if err != nil || len(result.Warnings) != 0 {
+		t.Fatalf("analyze: %v, warnings: %v", err, result.Warnings)
+	}
+	if result.Functions[0].Name != "FIRST.cb:wrap" {
+		t.Fatalf("static = %#v", result.Functions[0])
+	}
+	var names []string
+	for _, f := range result.Functions[1].Nested {
+		names = append(names, f.Name)
+	}
+	if !reflect.DeepEqual(names, []string{"first.cb:wrap", "second.cb:wrap", "nested.cb:outer.cb:inner", "parent", "object.run.cb:wrap", "immediate"}) {
+		t.Fatalf("names = %q", names)
+	}
+	if result.Functions[1].Nested[3].Nested[0].Name != "cb:wrap" {
+		t.Fatalf("nested = %#v", result.Functions[1])
+	}
+}

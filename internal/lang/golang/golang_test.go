@@ -401,3 +401,26 @@ func outer() {
 		t.Fatalf("names = %q, want %q", names, want)
 	}
 }
+
+func TestCallbackNamesRetainEnclosingOwners(t *testing.T) {
+	source := []byte(`package fixture
+var first = call(func() {})
+var second = call(func() {})
+var nested = outer(inner(func() {}))
+func f() { local := call(func() func() { return func() {} }); _ = local }
+`)
+	result, err := Analyze("owners.go", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, f := range result.Functions {
+		names = append(names, f.Name)
+	}
+	if !reflect.DeepEqual(names, []string{"first.cb:call", "second.cb:call", "nested.cb:outer.cb:inner", "f"}) {
+		t.Fatalf("names = %q", names)
+	}
+	if result.Functions[3].Nested[0].Name != "local.cb:call" || result.Functions[3].Nested[0].Nested[0].Name != "(anonymous)" {
+		t.Fatalf("nested = %#v", result.Functions[3])
+	}
+}

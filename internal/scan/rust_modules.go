@@ -38,7 +38,7 @@ func classifyRustModules(files []analyzedFile, ignored map[string]bool, config m
 		}
 		dir := path.Dir(file.blob.Path)
 		moduleDir := dir
-		if !rustCrateRoot(file.blob.Path) && path.Base(file.blob.Path) != "mod.rs" {
+		if !r.crateRoot(file.blob.Path) && path.Base(file.blob.Path) != "mod.rs" {
 			moduleDir = path.Join(dir, strings.TrimSuffix(path.Base(file.blob.Path), path.Ext(file.blob.Path)))
 		}
 		r.resolve(i, file.result.Modules, moduleDir, dir, false, false)
@@ -52,7 +52,7 @@ func classifyRustModules(files []analyzedFile, ignored map[string]bool, config m
 		if file.analysis.language != "rust" {
 			continue
 		}
-		if !r.incoming[i] || file.bucket == model.Tests || file.result.TestOnly || rustCrateRoot(file.blob.Path) {
+		if !r.incoming[i] || file.bucket == model.Tests || file.result.TestOnly || r.crateRoot(file.blob.Path) {
 			pending = append(pending, state{i, file.bucket})
 		}
 	}
@@ -162,6 +162,21 @@ func snapshotModulePath(base, name string) (string, bool) {
 
 func (r *moduleResolver) invalidPath(from int, module, name string) {
 	r.warnings = append(r.warnings, fmt.Sprintf("Rust module %s in %s: path %q is outside the analyzed snapshot or invalid", module, r.files[from].blob.Path, name))
+}
+
+func (r *moduleResolver) crateRoot(file string) bool {
+	if path.Base(file) == "build.rs" {
+		dir := path.Dir(file)
+		if dir == "." {
+			return true
+		}
+		for candidate := range r.index {
+			if strings.HasPrefix(candidate, path.Join(dir, "src")+"/") {
+				return true
+			}
+		}
+	}
+	return rustCrateRoot(file)
 }
 
 func rustCrateRoot(file string) bool {

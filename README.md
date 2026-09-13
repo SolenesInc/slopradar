@@ -157,7 +157,7 @@ for each snapshot, including when an unchanged child comes from the cache;
 parent-only scope changes appear in the diff. File-level `#![cfg(test)]` also
 marks the file and its child modules as tests. Module resolution uses only
 analyzed files, without running Cargo or expanding macros. Crate roots follow
-standard Cargo entry-point layouts (`src/lib.rs`, `src/main.rs`, binaries,
+standard Cargo entry-point layouts (`src/lib.rs`, `src/main.rs`, `build.rs`, binaries,
 examples, benches, and integration tests); custom Cargo target paths are not
 interpreted. Nested files named `main.rs` or `lib.rs` remain ordinary modules.
 Conditional or unresolvable module paths produce warnings; scans retain conservative source
