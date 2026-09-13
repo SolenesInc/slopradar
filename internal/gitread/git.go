@@ -236,8 +236,13 @@ func (r *Repository) ChangedFiles(ctx context.Context, base, head string) ([]str
 	return files, nil
 }
 
-func (r *Repository) LineChanges(ctx context.Context, base, head string) ([]LineChange, error) {
-	out, err := gitOutput(ctx, r.dir, "diff", "--no-renames", "--diff-algorithm=myers", "--no-indent-heuristic", "--unified=0", "--no-color", "--no-ext-diff", "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/", base, head, "--")
+func (r *Repository) LineChanges(ctx context.Context, base, head string, paths []string) ([]LineChange, error) {
+	if len(paths) == 0 {
+		return []LineChange{}, nil
+	}
+	args := []string{"--literal-pathspecs", "diff", "--no-renames", "--diff-algorithm=myers", "--no-indent-heuristic", "--unified=0", "--no-color", "--no-ext-diff", "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/", base, head, "--"}
+	args = append(args, paths...)
+	out, err := gitOutput(ctx, r.dir, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -296,6 +301,7 @@ func patchPath(value, prefix string) (string, error) {
 	if value == "/dev/null" {
 		return "", nil
 	}
+	value = strings.TrimSuffix(value, "\t")
 	if strings.HasPrefix(value, "\"") {
 		decoded, err := strconv.Unquote(value)
 		if err != nil {

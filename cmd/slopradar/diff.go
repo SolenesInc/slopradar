@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -45,16 +46,22 @@ func runDiff(ctx context.Context, args []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	lineChanges, err := repository.LineChanges(ctx, base, head)
-	if err != nil {
-		return err
-	}
 	cache := cacheStore(options.useCache)
 	baseSnapshot, err := scan.RevisionWithCache(ctx, ".", base, cache)
 	if err != nil {
 		return err
 	}
 	headSnapshot, err := scan.RevisionWithCache(ctx, ".", head, cache)
+	if err != nil {
+		return err
+	}
+	if err := model.ValidateComplete(baseSnapshot); err != nil {
+		return fmt.Errorf("base snapshot: %w", err)
+	}
+	if err := model.ValidateComplete(headSnapshot); err != nil {
+		return fmt.Errorf("head snapshot: %w", err)
+	}
+	lineChanges, err := repository.LineChanges(ctx, base, head, cloneMappingPaths(baseSnapshot, headSnapshot))
 	if err != nil {
 		return err
 	}
@@ -75,6 +82,32 @@ func runDiff(ctx context.Context, args []string, output io.Writer) error {
 		}
 	}
 	return report.WriteDiff(output, options.format, result, report.ColorEnabled(output))
+}
+
+func cloneMappingPaths(base, head model.Snapshot) []string {
+	before := make(map[string]bool, len(base.AnalysisPaths))
+	for _, path := range base.AnalysisPaths {
+		before[path.File] = path.GitLineCoordinates
+	}
+	compatible := make(map[string]bool, len(head.AnalysisPaths))
+	for _, path := range head.AnalysisPaths {
+		compatible[path.File] = before[path.File] && path.GitLineCoordinates
+	}
+	cloneFiles := make(map[string]struct{}, len(base.Clones)+len(head.Clones))
+	for _, pairs := range [][]model.ClonePair{base.Clones, head.Clones} {
+		for _, pair := range pairs {
+			cloneFiles[pair.A.File] = struct{}{}
+			cloneFiles[pair.B.File] = struct{}{}
+		}
+	}
+	paths := make([]string, 0, len(cloneFiles))
+	for file := range cloneFiles {
+		if compatible[file] {
+			paths = append(paths, file)
+		}
+	}
+	sort.Strings(paths)
+	return paths
 }
 
 func parseDiffArgs(args []string) (diffOptions, error) {

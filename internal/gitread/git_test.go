@@ -267,7 +267,7 @@ func TestLineChangesReadsGitHunks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := repository.LineChanges(context.Background(), base, head)
+	got, err := repository.LineChanges(context.Background(), base, head, []string{"lines.go"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,13 +280,73 @@ func TestLineChangesReadsGitHunks(t *testing.T) {
 	}
 }
 
+func TestLineChangesPinsPrefixesAndLimitsPaths(t *testing.T) {
+	dir := t.TempDir()
+	git(t, dir, "init", "-b", "main")
+	git(t, dir, "config", "user.name", "Slopradar Test")
+	git(t, dir, "config", "user.email", "test@slopradar.invalid")
+	git(t, dir, "config", "diff.noprefix", "true")
+	git(t, dir, "config", "diff.mnemonicPrefix", "true")
+	paths := []string{"space file.go", "trailing .go", "line\nfile.go", ":(exclude)magic.go", "-leading.go"}
+	for _, path := range append(append([]string(nil), paths...), "unrelated.txt") {
+		write(t, dir, path, "before\n")
+	}
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-m", "base")
+	base := strings.TrimSpace(git(t, dir, "rev-parse", "HEAD"))
+	for _, path := range append(append([]string(nil), paths...), "unrelated.txt") {
+		write(t, dir, path, "after\n")
+	}
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-m", "head")
+	head := strings.TrimSpace(git(t, dir, "rev-parse", "HEAD"))
+	repository, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := repository.LineChanges(context.Background(), base, head, paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotByFile := make(map[string]LineChange, len(got))
+	for _, change := range got {
+		gotByFile[change.File] = change
+	}
+	if len(gotByFile) != len(paths) {
+		t.Fatalf("line changes = %#v", got)
+	}
+	for _, path := range paths {
+		want := LineChange{File: path, BeforeStart: 1, BeforeCount: 1, AfterStart: 1, AfterCount: 1}
+		if gotByFile[path] != want {
+			t.Fatalf("line change for %q = %#v, want %#v", path, gotByFile[path], want)
+		}
+	}
+	if _, exists := gotByFile["unrelated.txt"]; exists {
+		t.Fatalf("unselected path included in line changes: %#v", got)
+	}
+}
+
+func TestLineChangesWithNoPathsDoesNotReadWholePatch(t *testing.T) {
+	repository := &Repository{dir: t.TempDir()}
+	got, err := repository.LineChanges(context.Background(), "missing-base", "missing-head", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("line changes = %#v", got)
+	}
+}
+
 func TestParseLineChangesPreservesQuotedPathsAndIgnoresSourceMarkers(t *testing.T) {
-	patch := []byte("diff --git \"a/line\\nfile.go\" \"b/line\\nfile.go\"\n--- \"a/line\\nfile.go\"\n+++ \"b/line\\nfile.go\"\n@@ -3 +3,0 @@\n--- source text\n")
+	patch := []byte("diff --git \"a/line\\nfile.go\" \"b/line\\nfile.go\"\n--- \"a/line\\nfile.go\"\n+++ \"b/line\\nfile.go\"\n@@ -3 +3,0 @@\n--- source text\ndiff --git \"a/invalid-\\377.go\" \"b/invalid-\\377.go\"\n--- \"a/invalid-\\377.go\"\n+++ \"b/invalid-\\377.go\"\n@@ -1 +1 @@\n")
 	got, err := parseLineChanges(patch)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []LineChange{{File: "line\nfile.go", BeforeStart: 3, BeforeCount: 1, AfterStart: 3, AfterCount: 0}}
+	want := []LineChange{
+		{File: "line\nfile.go", BeforeStart: 3, BeforeCount: 1, AfterStart: 3, AfterCount: 0},
+		{File: "invalid-\xff.go", BeforeStart: 1, BeforeCount: 1, AfterStart: 1, AfterCount: 1},
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("line changes = %#v, want %#v", got, want)
 	}
@@ -305,7 +365,7 @@ func BenchmarkLineChanges(b *testing.B) {
 	}
 	b.ResetTimer()
 	for range b.N {
-		changes, err := repository.LineChanges(context.Background(), base, head)
+		changes, err := repository.LineChanges(context.Background(), base, head, []string{"."})
 		if err != nil {
 			b.Fatal(err)
 		}

@@ -180,6 +180,40 @@ func TestDiffRejectsHeadThatCrossesFileSizeTripwire(t *testing.T) {
 	}
 }
 
+func TestCloneMappingPathsSelectsCompatibleCloneFilesInBothSnapshots(t *testing.T) {
+	base := model.Snapshot{
+		AnalysisPaths: []model.AnalysisPath{
+			{File: "b.go", GitLineCoordinates: true},
+			{File: "a.go", GitLineCoordinates: true},
+			{File: "ambiguous.js", GitLineCoordinates: false},
+			{File: "removed.go", GitLineCoordinates: true},
+			{File: "unrelated.go", GitLineCoordinates: true},
+		},
+		Clones: []model.ClonePair{
+			{A: model.Range{File: "a.go"}, B: model.Range{File: "b.go"}},
+			{A: model.Range{File: "ambiguous.js"}, B: model.Range{File: "b.go"}},
+			{A: model.Range{File: "removed.go"}, B: model.Range{File: "b.go"}},
+		},
+	}
+	head := model.Snapshot{
+		AnalysisPaths: []model.AnalysisPath{
+			{File: "a.go", GitLineCoordinates: true},
+			{File: "b.go", GitLineCoordinates: true},
+			{File: "ambiguous.js", GitLineCoordinates: true},
+			{File: "added.go", GitLineCoordinates: true},
+			{File: "unrelated.go", GitLineCoordinates: true},
+		},
+		Clones: []model.ClonePair{
+			{A: model.Range{File: "a.go"}, B: model.Range{File: "b.go"}},
+			{A: model.Range{File: "added.go"}, B: model.Range{File: "b.go"}},
+		},
+	}
+	want := []string{"a.go", "b.go"}
+	if got := cloneMappingPaths(base, head); !reflect.DeepEqual(got, want) {
+		t.Fatalf("clone mapping paths = %#v, want %#v", got, want)
+	}
+}
+
 func TestDiffReportsConfigOnlyExclusionAndBucketChanges(t *testing.T) {
 	dir := t.TempDir()
 	gitCommand(t, dir, "init", "-b", "main")
