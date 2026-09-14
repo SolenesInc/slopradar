@@ -409,3 +409,40 @@ func write(t *testing.T, root, name, content string) {
 		t.Fatal(err)
 	}
 }
+
+func TestLimitedReadersPreserveFullSizesAndFollowingBlobs(t *testing.T) {
+	dir := t.TempDir()
+	git(t, dir, "init", "-b", "main")
+	git(t, dir, "config", "user.name", "Slopradar Test")
+	git(t, dir, "config", "user.email", "test@slopradar.invalid")
+	prefix := "header\n"
+	content := prefix + "body that must be drained\x00\n"
+	write(t, dir, "a.txt", content)
+	write(t, dir, "b.txt", "next")
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-m", "bounded read fixtures")
+	repo, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	infos, err := repo.ListTree(context.Background(), "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for label, read := range map[string]func() ([]Blob, error){
+		"git": func() ([]Blob, error) { return repo.ReadBlobsLimited(context.Background(), infos, int64(len(prefix))) },
+		"directory": func() ([]Blob, error) {
+			return ReadDirectoryFilteredLimited(dir, func(file string, _ int64, _ bool) bool { return file != ".git" }, int64(len(prefix)))
+		},
+	} {
+		t.Run(label, func(t *testing.T) {
+			blobs, err := read()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(blobs) != 2 || string(blobs[0].Content) != prefix || blobs[0].Size != int64(len(content)) || string(blobs[1].Content) != "next" || blobs[1].Size != int64(len("next")) {
+				t.Fatalf("blobs = %#v", blobs)
+			}
+		})
+	}
+}

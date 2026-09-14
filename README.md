@@ -288,9 +288,9 @@ nine Excalidraw helper or fixture files in these scopes. The
 
 The Go analyzer uses the Go 1.27 standard parser and accepts generalized
 `new(expression)` and generic methods. The full standard-library scan completes
-without warnings. It names generated `cmd/compile/internal/ssa/opGen.go` and
-`cmd/compile/internal/ssa/rewriteAMD64.go` as skipped above the documented file
-size tripwire.
+without warnings or incomplete-file skips. Generated files, including oversized
+`cmd/compile/internal/ssa/opGen.go` and `cmd/compile/internal/ssa/rewriteAMD64.go`,
+are excluded by their leading markers.
 
 The [full baseline receipt](docs/baselines-v0.1.0.json) preserves the inputs,
 commands, warnings, and unrounded outputs. The
@@ -312,8 +312,10 @@ assembled.
   repository's own trend, not for comparing languages or unrelated projects.
 - Clone detection is exact-token matching. A near-duplicate with renamed
   identifiers is not a clone in this release.
-- Files above `max_file_bytes=2097152` are skipped and named with both the limit
-  and requested size. This tripwire was set above attn revision `e05560650`'s
+- Files above `max_file_bytes=2097152` are checked for a leading generated marker
+  within that bounded prefix. Recognized generated files are ignored; other
+  oversized files are skipped and named with both the limit and requested size.
+  Go generation directives must end on a complete line within the prefix. This tripwire was set above attn revision `e05560650`'s
   measured largest source file (`925234` bytes) and largest handwritten source
   file (`256764` bytes).
 

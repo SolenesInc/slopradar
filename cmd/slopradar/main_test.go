@@ -1016,3 +1016,29 @@ func gitCommandAt(t *testing.T, dir, date string, args ...string) string {
 	}
 	return string(output)
 }
+
+func TestDiffAndTrendIgnoreOversizedGeneratedSource(t *testing.T) {
+	dir := t.TempDir()
+	gitCommand(t, dir, "init", "-b", "main")
+	gitCommand(t, dir, "config", "user.name", "Slopradar Test")
+	gitCommand(t, dir, "config", "user.email", "test@slopradar.invalid")
+	writeFile(t, dir, "source.go", "package fixture\nfunc kept() {}\n")
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "base")
+	writeFile(t, dir, "generated.go", "// Code generated fixture. DO NOT EDIT.\n"+strings.Repeat(" ", model.MaxFileBytes))
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "add generated output")
+	t.Chdir(dir)
+	for _, args := range [][]string{
+		{"diff", "--base", "HEAD^", "--head", "HEAD", "--trend", "1", "--format=json", "--no-cache"},
+		{"trend", "--months", "1", "--format=json", "--no-cache"},
+	} {
+		var output bytes.Buffer
+		if err := run(context.Background(), args, &output); err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+		if !json.Valid(output.Bytes()) {
+			t.Fatalf("invalid output: %s", output.Bytes())
+		}
+	}
+}

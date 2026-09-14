@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -41,8 +42,7 @@ func Directory(root string) (model.Snapshot, error) {
 		return model.Snapshot{}, err
 	}
 	var packageFiles []gitread.Blob
-	skipped := []model.SkippedFile{}
-	filter := func(file string, size int64, directory bool) bool {
+	filter := func(file string, _ int64, directory bool) bool {
 		if directory {
 			return !model.ExcludedDirectory(file, config.Excludes)
 		}
@@ -56,17 +56,13 @@ func Directory(root string) (model.Snapshot, error) {
 		if _, ok := analyzerFor(file); !ok {
 			return false
 		}
-		if size > model.MaxFileBytes {
-			skipped = append(skipped, model.SkippedFile{File: file, MaxBytes: model.MaxFileBytes, AskedBytes: size})
-			return false
-		}
 		return true
 	}
-	blobs, err := gitread.ReadDirectoryFiltered(root, filter)
+	blobs, err := gitread.ReadDirectoryFilteredLimited(root, filter, model.MaxFileBytes)
 	if err != nil {
 		return model.Snapshot{}, err
 	}
-	return blobsWithConfig("directory", append(blobs, packageFiles...), config, skipped, nil)
+	return blobsWithConfig("directory", append(blobs, packageFiles...), config, nil)
 }
 
 func Revision(ctx context.Context, root, rev string) (model.Snapshot, error) {
@@ -92,7 +88,6 @@ func RevisionWithCache(ctx context.Context, root, rev string, cache *analysiscac
 	}
 	var packageFiles []gitread.Blob
 	selected := make([]gitread.BlobInfo, 0, len(infos))
-	skipped := []model.SkippedFile{}
 	for _, info := range infos {
 		if path.Base(info.Path) == "Cargo.toml" {
 			packageFiles = append(packageFiles, gitread.Blob{BlobInfo: gitread.BlobInfo{Path: info.Path}})
@@ -104,17 +99,13 @@ func RevisionWithCache(ctx context.Context, root, rev string, cache *analysiscac
 		if _, ok := analyzerFor(info.Path); !ok {
 			continue
 		}
-		if info.Size > model.MaxFileBytes {
-			skipped = append(skipped, model.SkippedFile{File: info.Path, MaxBytes: model.MaxFileBytes, AskedBytes: info.Size})
-			continue
-		}
 		selected = append(selected, info)
 	}
-	blobs, err := repository.ReadBlobs(ctx, selected)
+	blobs, err := repository.ReadBlobsLimited(ctx, selected, model.MaxFileBytes)
 	if err != nil {
 		return model.Snapshot{}, err
 	}
-	return blobsWithConfig(resolved, append(blobs, packageFiles...), config, skipped, cache)
+	return blobsWithConfig(resolved, append(blobs, packageFiles...), config, cache)
 }
 
 func Blobs(rev string, blobs []gitread.Blob) (model.Snapshot, error) {
@@ -124,18 +115,15 @@ func Blobs(rev string, blobs []gitread.Blob) (model.Snapshot, error) {
 	if err != nil {
 		return model.Snapshot{}, err
 	}
-	return blobsWithConfig(rev, blobs, config, nil, nil)
+	return blobsWithConfig(rev, blobs, config, nil)
 }
 
-func blobsWithConfig(rev string, blobs []gitread.Blob, config model.Config, skipped []model.SkippedFile, cache *analysiscache.Store) (model.Snapshot, error) {
+func blobsWithConfig(rev string, blobs []gitread.Blob, config model.Config, cache *analysiscache.Store) (model.Snapshot, error) {
 	blobs = append([]gitread.Blob(nil), blobs...)
 	sort.Slice(blobs, func(i, j int) bool { return blobs[i].Path < blobs[j].Path })
 	snapshot := model.Snapshot{
 		Rev: rev, Functions: []model.Function{}, Clones: []model.ClonePair{}, CloneCoverage: []model.CloneCoverage{}, AnalysisPaths: []model.AnalysisPath{},
-		Buckets: map[model.Bucket]model.Totals{model.Source: {}, model.Tests: {}}, Skipped: []string{}, SkippedDetails: append([]model.SkippedFile(nil), skipped...), Warnings: []string{},
-	}
-	for _, item := range skipped {
-		snapshot.Skipped = append(snapshot.Skipped, item.File)
+		Buckets: map[model.Bucket]model.Totals{model.Source: {}, model.Tests: {}}, Skipped: []string{}, Warnings: []string{},
 	}
 	functions := map[model.Bucket][]model.Function{model.Source: {}, model.Tests: {}}
 	cloneFiles := []clones.File{}
@@ -147,7 +135,11 @@ func blobsWithConfig(rev string, blobs []gitread.Blob, config model.Config, skip
 			packages[path.Dir(blob.Path)] = true
 			continue
 		}
-		classification := model.Classify(blob.Path, blob.Content, config)
+		content := blob.Content
+		if int64(len(content)) < blob.Size && strings.EqualFold(path.Ext(blob.Path), ".go") {
+			content = content[:bytes.LastIndexByte(content, '\n')+1]
+		}
+		classification := model.Classify(blob.Path, content, config)
 		if classification.Excluded || classification.Generated {
 			ignored[blob.Path] = true
 			continue

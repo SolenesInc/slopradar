@@ -662,3 +662,59 @@ func TestDeclarationTestFilesUseTestLineAndCloneBuckets(t *testing.T) {
 		})
 	}
 }
+
+func TestOversizedGeneratedFilesAreIgnoredBeforeSizeSkips(t *testing.T) {
+	dir := t.TempDir()
+	gitForScan(t, dir, "init", "-b", "main")
+	gitForScan(t, dir, "config", "user.name", "Slopradar Test")
+	gitForScan(t, dir, "config", "user.email", "test@slopradar.invalid")
+	files := map[string]string{
+		"generated.go": "// Code generated fixture. DO NOT EDIT.\n",
+		"generated.ts": "/* @generated */\n",
+		"generated.py": "# @generated\n",
+		"generated.rs": "// linguist-generated\n",
+		"large.go":     "package fixture\n",
+	}
+	var blobs []gitread.Blob
+	for name, header := range files {
+		content := header + strings.Repeat(" ", model.MaxFileBytes+1-len(header))
+		writeScanFile(t, dir, name, content)
+		blobs = append(blobs, gitread.Blob{BlobInfo: gitread.BlobInfo{Path: name, Size: int64(len(content))}, Content: []byte(content)})
+	}
+	writeScanFile(t, dir, "small.go", "package fixture\nfunc kept() {}\n")
+	gitForScan(t, dir, "add", ".")
+	gitForScan(t, dir, "commit", "-m", "oversized generated fixtures")
+	for label, scan := range map[string]func() (model.Snapshot, error){
+		"directory": func() (model.Snapshot, error) { return Directory(dir) },
+		"revision":  func() (model.Snapshot, error) { return Revision(context.Background(), dir, "HEAD") },
+		"blobs":     func() (model.Snapshot, error) { return Blobs("fixture", blobs) },
+	} {
+		t.Run(label, func(t *testing.T) {
+			got, err := scan()
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := []model.SkippedFile{{File: "large.go", MaxBytes: model.MaxFileBytes, AskedBytes: model.MaxFileBytes + 1}}
+			if !reflect.DeepEqual(got.SkippedDetails, want) {
+				t.Fatalf("skips = %#v, want %#v", got.SkippedDetails, want)
+			}
+			if len(got.Warnings) != 0 {
+				t.Fatalf("warnings = %#v", got.Warnings)
+			}
+		})
+	}
+}
+
+func TestTruncatedGeneratedDirectiveDoesNotHideOversizedSource(t *testing.T) {
+	dir := t.TempDir()
+	suffix := "// Code generated fixture. DO NOT EDIT."
+	content := strings.Repeat(" ", model.MaxFileBytes-len(suffix)) + suffix + " trailing prose\npackage fixture\n"
+	writeScanFile(t, dir, "source.go", content)
+	got, err := Directory(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.Skipped, []string{"source.go"}) {
+		t.Fatalf("skips = %#v", got.Skipped)
+	}
+}

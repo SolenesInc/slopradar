@@ -2,6 +2,7 @@ package gitread
 
 import (
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -15,6 +16,10 @@ func ReadDirectory(root string) ([]Blob, error) {
 type DirectoryFilter func(path string, size int64, directory bool) bool
 
 func ReadDirectoryFiltered(root string, filter DirectoryFilter) ([]Blob, error) {
+	return ReadDirectoryFilteredLimited(root, filter, 0)
+}
+
+func ReadDirectoryFilteredLimited(root string, filter DirectoryFilter, maxBytes int64) ([]Blob, error) {
 	root, err := filepath.Abs(root)
 	if err != nil {
 		return nil, fmt.Errorf("resolve directory %q: %w", root, err)
@@ -52,12 +57,24 @@ func ReadDirectoryFiltered(root string, filter DirectoryFilter) ([]Blob, error) 
 		if filter != nil && !filter(rel, info.Size(), false) {
 			return nil
 		}
-		content, err := os.ReadFile(path)
+		file, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		var reader io.Reader = file
+		if maxBytes > 0 {
+			reader = io.LimitReader(file, maxBytes)
+		}
+		content, err := io.ReadAll(reader)
+		closeErr := file.Close()
+		if err == nil {
+			err = closeErr
+		}
 		if err != nil {
 			return err
 		}
 		blobs = append(blobs, Blob{
-			BlobInfo: BlobInfo{Path: rel, Size: int64(len(content))},
+			BlobInfo: BlobInfo{Path: rel, Size: max(info.Size(), int64(len(content)))},
 			Content:  content,
 		})
 		return nil

@@ -112,6 +112,10 @@ func (r *Repository) ListTree(ctx context.Context, rev string) ([]BlobInfo, erro
 }
 
 func (r *Repository) ReadBlobs(ctx context.Context, infos []BlobInfo) ([]Blob, error) {
+	return r.ReadBlobsLimited(ctx, infos, 0)
+}
+
+func (r *Repository) ReadBlobsLimited(ctx context.Context, infos []BlobInfo, maxBytes int64) ([]Blob, error) {
 	if len(infos) == 0 {
 		return []Blob{}, nil
 	}
@@ -174,10 +178,18 @@ func (r *Repository) ReadBlobs(ctx context.Context, infos []BlobInfo) ([]Blob, e
 			abort()
 			return nil, fmt.Errorf("git cat-file returned an invalid size for %q: %q", info.Path, fields[catFileSizeField])
 		}
-		content := make([]byte, size)
+		readSize := size
+		if maxBytes > 0 {
+			readSize = min(size, maxBytes)
+		}
+		content := make([]byte, readSize)
 		if _, err := io.ReadFull(reader, content); err != nil {
 			abort()
 			return nil, fmt.Errorf("read git blob %q: %w", info.Path, err)
+		}
+		if _, err := io.CopyN(io.Discard, reader, size-readSize); err != nil {
+			abort()
+			return nil, fmt.Errorf("drain git blob %q: %w", info.Path, err)
 		}
 		terminator, err := reader.ReadByte()
 		if err != nil || terminator != '\n' {
