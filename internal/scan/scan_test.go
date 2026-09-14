@@ -718,3 +718,60 @@ func TestTruncatedGeneratedDirectiveDoesNotHideOversizedSource(t *testing.T) {
 		t.Fatalf("skips = %#v", got.Skipped)
 	}
 }
+
+func TestPythonUniversalNewlineScansPreserveClonesAndGitCoordinates(t *testing.T) {
+	lines := []string{"# header", "def repeated(value):", "    alpha = value + 1 + 2 + 3 + 4 + 5", "    beta = alpha + 6 + 7 + 8 + 9 + 10", "    # comment", "    gamma = beta + 11 + 12 + 13 + 14 + 15", "    if gamma > value:", "        return gamma", "    return value"}
+	for label, endings := range map[string][]string{"lf": {"\n"}, "crlf": {"\r\n"}, "cr": {"\r"}, "mixed": {"\r", "\r\n", "\n"}} {
+		t.Run(label, func(t *testing.T) {
+			var source strings.Builder
+			for i, line := range lines {
+				source.WriteString(line)
+				source.WriteString(endings[i%len(endings)])
+			}
+			dir := t.TempDir()
+			gitForScan(t, dir, "init", "-b", "main")
+			gitForScan(t, dir, "config", "user.name", "Slopradar Test")
+			gitForScan(t, dir, "config", "user.email", "test@slopradar.invalid")
+			for _, file := range []string{"a.py", "b.py"} {
+				writeScanFile(t, dir, file, source.String())
+			}
+			gitForScan(t, dir, "add", ".")
+			gitForScan(t, dir, "commit", "-m", "Python newline fixtures")
+			for mode, scan := range map[string]func() (model.Snapshot, error){"directory": func() (model.Snapshot, error) { return Directory(dir) }, "revision": func() (model.Snapshot, error) { return Revision(context.Background(), dir, "HEAD") }} {
+				got, err := scan()
+				if err != nil || len(got.Warnings) != 0 {
+					t.Fatalf("%s: %v, warnings %v", mode, err, got.Warnings)
+				}
+				total := got.Buckets[model.Source]
+				if total.SourceLines != 14 || total.CloneLines != 14 || len(got.Clones) != 1 || len(got.Functions) != 2 {
+					t.Fatalf("%s: snapshot %#v", mode, got)
+				}
+				for _, f := range got.Functions {
+					if f.Line != 2 || f.SLOC != 7 || f.CC != 2 {
+						t.Fatalf("function %#v", f)
+					}
+				}
+				for _, p := range got.AnalysisPaths {
+					if p.GitLineCoordinates != (label == "lf" || label == "crlf") {
+						t.Fatalf("coordinates %#v", p)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestRustCompanionAttributesDoNotContributeSourceClones(t *testing.T) {
+	source := "#[cfg(test)]\n" + strings.Repeat("#[allow(dead_code, unused_variables, unused_mut)]\n", clones.JscpdDefaultMinimumLines+1) + "fn helper() {}\n"
+	var blobs []gitread.Blob
+	for _, file := range []string{"a.rs", "b.rs"} {
+		blobs = append(blobs, gitread.Blob{BlobInfo: gitread.BlobInfo{Path: file, Size: int64(len(source))}, Content: []byte(source)})
+	}
+	got, err := Blobs("attributes", blobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Buckets[model.Source].SourceLines != 0 || got.Buckets[model.Source].CloneLines != 0 || got.Buckets[model.Tests].CloneLines == 0 {
+		t.Fatalf("buckets %#v", got.Buckets)
+	}
+}

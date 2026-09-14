@@ -167,10 +167,14 @@ func blobsWithConfig(rev string, blobs []gitread.Blob, config model.Config, cach
 	snapshot.Warnings = append(snapshot.Warnings, classifyRustModules(files, ignored, packages, config)...)
 	for _, file := range files {
 		blob, analyze, result, bucket := file.blob, file.analysis, file.result, file.bucket
-		gitLineCoordinates := analyze.language != "typescript" || lang.CountLineTerminators(blob.Content, false) == lang.CountLineTerminators(blob.Content, true)
+		lineSource := blob.Content
+		if analyze.language == "python" {
+			lineSource = lang.NormalizePythonNewlines(lineSource)
+		}
+		gitLineCoordinates := lang.CountLineTerminators(blob.Content, false) == lang.CountLineTerminators(lineSource, analyze.language == "typescript")
 		snapshot.AnalysisPaths = append(snapshot.AnalysisPaths, model.AnalysisPath{File: blob.Path, Bucket: bucket, GitLineCoordinates: gitLineCoordinates})
 		snapshot.Warnings = append(snapshot.Warnings, result.Warnings...)
-		sourceLines := lang.SourceLines(blob.Content, result.Comments, result.TestSpans)
+		sourceLines := lang.SourceLines(lineSource, result.Comments, result.TestSpans)
 		if analyze.language == "typescript" {
 			sourceLines = lang.JavaScriptSourceLines(blob.Content, result.Comments, result.TestSpans)
 		}

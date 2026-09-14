@@ -1042,3 +1042,28 @@ func TestDiffAndTrendIgnoreOversizedGeneratedSource(t *testing.T) {
 		}
 	}
 }
+
+func TestDiffAndTrendHandlePythonCarriageReturnLines(t *testing.T) {
+	dir := t.TempDir()
+	gitCommand(t, dir, "init", "-b", "main")
+	gitCommand(t, dir, "config", "user.name", "Slopradar Test")
+	gitCommand(t, dir, "config", "user.email", "test@slopradar.invalid")
+	writeFile(t, dir, "source.py", "# header\rdef run(x):\r    return x\r")
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "base")
+	writeFile(t, dir, "source.py", "# header\rdef run(x):\r    if x:\r        return x\r    return 0\r")
+	gitCommand(t, dir, "add", ".")
+	gitCommand(t, dir, "commit", "-m", "change")
+	t.Chdir(dir)
+	var output bytes.Buffer
+	if err := run(context.Background(), []string{"diff", "--base", "HEAD^", "--head", "HEAD", "--trend", "1", "--format=json", "--no-cache"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	var got model.Diff
+	if err := json.Unmarshal(output.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Functions) != 1 || got.Functions[0].Before.CC != 1 || got.Functions[0].After.CC != 2 || got.Functions[0].After.SLOC != 4 || got.Functions[0].After.Line != 2 {
+		t.Fatalf("diff %#v", got)
+	}
+}

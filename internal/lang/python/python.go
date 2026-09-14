@@ -13,6 +13,7 @@ import (
 
 func Analyze(file string, source []byte) (lang.Result, error) {
 	rules := lang.Rules{
+		ParseSource:    lang.NormalizePythonNewlines,
 		Language:       sitter.NewLanguage(tree_sitter_python.Language()),
 		Function:       isFunction,
 		Name:           name,

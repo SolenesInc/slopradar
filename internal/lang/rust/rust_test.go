@@ -317,3 +317,27 @@ func TestCollectionAndArgumentClosureOwners(t *testing.T) {
 		t.Fatalf("names = %q, want %q", names, want)
 	}
 }
+
+func TestCompanionAttributesInheritTestScope(t *testing.T) {
+	for _, attributes := range []string{
+		"#[cfg(test)]\n#[allow(dead_code)]",
+		"#[allow(dead_code)]\n// companion\n#[cfg(test)]",
+		"#[allow(dead_code)] #[cfg(test)] #[inline]",
+	} {
+		source := []byte(attributes + "\nfn helper() {}\n#[allow(dead_code)]\nfn production() {}\n")
+		result, err := Analyze("fixture.rs", source)
+		if err != nil || len(result.Warnings) != 0 {
+			t.Fatalf("analyze: %v, warnings %v", err, result.Warnings)
+		}
+		lines := lang.SourceLines(source, result.Comments, result.TestSpans)
+		count := strings.Count(attributes, "\n") + 1
+		if !reflect.DeepEqual(lines[model.Source], []int{count + 2, count + 3}) {
+			t.Fatalf("attributes %q: source lines %v", attributes, lines[model.Source])
+		}
+		for _, token := range result.Tokens {
+			if token.Line <= count+1 && token.Bucket != model.Tests {
+				t.Fatalf("attributes %q: source token %#v", attributes, token)
+			}
+		}
+	}
+}

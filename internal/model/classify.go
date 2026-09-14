@@ -189,6 +189,8 @@ func leadingComment(content []byte, extension string) ([]byte, []byte, bool) {
 	if bytes.HasPrefix(content, []byte("//")) || hashComment || shebang {
 		terminators := "\n"
 		switch extension {
+		case ".py":
+			terminators = "\n\r"
 		case ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs":
 			terminators = "\n\r\u2028\u2029"
 		}

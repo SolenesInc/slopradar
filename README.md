@@ -188,6 +188,12 @@ JSON itself; a literal sequence such as `\xFF` is written as `\\xFF`.
 Generated files are skipped when a leading comment contains Go's
 `Code generated … DO NOT EDIT.`, `@generated`, or `linguist-generated` marker.
 Marker text inside a string literal does not exclude a handwritten file.
+
+Python accepts LF, CRLF, and CR physical line endings, including mixed endings.
+Parser coordinates and SLOC follow those physical lines; clone tokens retain
+the original literal bytes. Git line matching is disabled for files whose
+physical lines differ from Git’s LF-based coordinates. Rust attributes attached
+to a test-only item inherit its test bucket, including companion attributes.
 JavaScript line comments end at LF, CRLF, CR, U+2028, or U+2029, so marker
 strings on the following source line stay outside the comment.
 Generator output without a marker must be listed in `excludes`.

@@ -232,3 +232,16 @@ func TestGoGeneratedDirectiveRequiresCanonicalLine(t *testing.T) {
 		}
 	}
 }
+
+func TestPythonGeneratedMarkersRespectCarriageReturnLines(t *testing.T) {
+	for _, ending := range []string{"\n", "\r\n", "\r"} {
+		source := "# header" + ending + "value = '@generated'" + ending
+		if Classify("source.py", []byte(source), Config{}).Generated {
+			t.Fatalf("literal marker classified generated for %q", ending)
+		}
+		source = "# header" + ending + "# @generated" + ending
+		if !Classify("generated.py", []byte(source), Config{}).Generated {
+			t.Fatalf("leading marker ignored for %q", ending)
+		}
+	}
+}

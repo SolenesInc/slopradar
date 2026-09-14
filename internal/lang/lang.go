@@ -46,6 +46,7 @@ type Result struct {
 }
 
 type Rules struct {
+	ParseSource    func([]byte) []byte
 	Modules        func(*sitter.Node, []byte) []Module
 	Language       *sitter.Language
 	Function       func(*sitter.Node) bool
@@ -71,7 +72,11 @@ func Analyze(file string, source []byte, rules Rules) (Result, error) {
 	if err := parser.SetLanguage(rules.Language); err != nil {
 		return Result{}, fmt.Errorf("set parser language: %w", err)
 	}
-	tree := parser.Parse(source, nil)
+	parseSource := source
+	if rules.ParseSource != nil {
+		parseSource = rules.ParseSource(source)
+	}
+	tree := parser.Parse(parseSource, nil)
 	if tree == nil {
 		return Result{}, fmt.Errorf("parse %s: parser returned no tree", file)
 	}
@@ -89,7 +94,7 @@ func Analyze(file string, source []byte, rules Rules) (Result, error) {
 	var roots []*candidate
 	collectFunctions(root, source, rules, model.Source, nil, &roots)
 	for _, root := range roots {
-		result.Functions = append(result.Functions, buildFunction(file, source, rules, result.Comments, root))
+		result.Functions = append(result.Functions, buildFunction(file, parseSource, rules, result.Comments, root))
 		result.FunctionBuckets = append(result.FunctionBuckets, root.bucket)
 	}
 	return result, nil
@@ -321,4 +326,20 @@ func lineTerminatorWidth(content []byte, offset int, javascript bool) int {
 		}
 	}
 	return 0
+}
+
+func NormalizePythonNewlines(source []byte) []byte {
+	var normalized []byte
+	for i, b := range source {
+		if b == '\r' && (i+1 == len(source) || source[i+1] != '\n') {
+			if normalized == nil {
+				normalized = bytes.Clone(source)
+			}
+			normalized[i] = '\n'
+		}
+	}
+	if normalized == nil {
+		return source
+	}
+	return normalized
 }

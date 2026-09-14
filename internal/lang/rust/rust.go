@@ -143,6 +143,14 @@ func isTestScope(node *sitter.Node, source []byte) bool {
 		}
 	}
 	if node.Kind() == "attribute_item" {
+		for sibling := node.NextNamedSibling(); sibling != nil; sibling = sibling.NextNamedSibling() {
+			switch sibling.Kind() {
+			case "line_comment", "block_comment", "attribute_item":
+				continue
+			default:
+				return isTestScope(sibling, source)
+			}
+		}
 		return testAttribute(node, source)
 	}
 	for sibling := node.PrevNamedSibling(); sibling != nil; sibling = sibling.PrevNamedSibling() {

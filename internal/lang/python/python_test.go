@@ -404,3 +404,28 @@ func TestParenthesizedDocstringsIgnoreCommentsBetweenLiterals(t *testing.T) {
 		t.Fatalf("source lines=%d, want function and return", got)
 	}
 }
+
+func TestUniversalNewlinesPreserveFunctionsCommentsAndLiteralBytes(t *testing.T) {
+	source := "# leading\ndef run(x):\n    \"doc\"\n    if x:\n        return \"\"\"first\nsecond\"\"\"\n    return x\n"
+	for label, ending := range map[string]string{"LF": "\n", "CRLF": "\r\n", "CR": "\r"} {
+		t.Run(label, func(t *testing.T) {
+			raw := []byte(strings.ReplaceAll(source, "\n", ending))
+			result, err := Analyze("fixture.py", raw)
+			if err != nil || len(result.Warnings) != 0 {
+				t.Fatalf("analyze: %v, warnings %v", err, result.Warnings)
+			}
+			if len(result.Functions) != 1 || result.Functions[0].Line != 2 || result.Functions[0].SLOC != 5 || result.Functions[0].CC != 2 {
+				t.Fatalf("functions = %#v", result.Functions)
+			}
+			if len(result.Comments) != 2 || result.Comments[0].StartLine != 1 || result.Comments[1].StartLine != 3 {
+				t.Fatalf("comments = %#v", result.Comments)
+			}
+			if !containsToken(tokenTexts(result.Tokens), "first"+ending+"second") {
+				t.Fatalf("literal bytes changed: %#v", result.Tokens)
+			}
+			if string(raw) != strings.ReplaceAll(source, "\n", ending) {
+				t.Fatal("source mutated")
+			}
+		})
+	}
+}
