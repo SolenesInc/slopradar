@@ -3,7 +3,7 @@
 The README's v0.1.0 baseline table is backed by the machine-readable
 [baseline receipt](baselines-v0.1.0.json). It records the exact tool commit,
 binary checksum, corpus revisions, scope filters, warnings, skipped files, and
-unrounded results measured on September 13, 2026.
+unrounded results measured on September 14, 2026.
 
 This is a historical receipt. Reproduce it from the pinned revisions below;
 each parser or classification refresh records its new producer and measured
@@ -13,7 +13,7 @@ values. Earlier receipts remain in Git history at their recorded commits.
 
 Install Git, Go 1.27.1, `jq`, `rsync`, and a C compiler. The recorded binary was
 built with `go1.27.1 darwin/arm64`; its SHA-256 checksum is
-`23d48c4d01981bcac54c99bd6ee785065e19e14eb502da3b78772af5263808d1`.
+`78ee6ec2dc5778dca88e59a2d12e29e57c71c4c2f3822eb5a6fdfb141e58554f`.
 Network access is required to fetch the pinned inputs.
 
 Start in an empty temporary directory:
@@ -21,7 +21,7 @@ Start in an empty temporary directory:
 ```sh
 baseline_root=$(mktemp -d)
 git clone https://github.com/SolenesInc/slopradar.git "$baseline_root/slopradar"
-git -C "$baseline_root/slopradar" checkout --detach 22d9829bd7a73fe07a350d753f0f4bb7ffa0855a
+git -C "$baseline_root/slopradar" checkout --detach e8368fc5395e4442bd607bdc2732e2aa68b8feef
 go -C "$baseline_root/slopradar" build -o "$baseline_root/slopradar-bin" ./cmd/slopradar
 ```
 
