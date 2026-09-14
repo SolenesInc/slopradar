@@ -1,0 +1,66 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.x"
+      - uses: golangci/golangci-lint-action@v9.3.0
+        with:
+          version: v2.13.2
+      - run: golangci-lint fmt --diff
+
+  action-scripts:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: node --test scripts/*.test.cjs
+
+  native-notices:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read Rust toolchain pin
+        id: rust_toolchain
+        shell: bash
+        run: |
+          channel=$(sed -n 's/^channel = "\([^"]*\)"/\1/p' internal/oxc/rust/rust-toolchain.toml)
+          test -n "$channel"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install "${{ steps.rust_toolchain.outputs.channel }}" --profile minimal --component rust-docs
+      - run: python3 scripts/collect-oxc-licenses.py --check
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-22.04-arm, macos-15-intel, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.x"
+      - run: python3 scripts/build-oxc.py --check
+      - run: go test -race ./...
+      - run: go vet ./...
+      - name: Install without Rust or Node
+        shell: bash
+        run: |
+          go_root=$(go env GOROOT)
+          env PATH="$go_root/bin:/usr/bin:/bin" GOBIN="$RUNNER_TEMP/slopradar-bin" go install ./cmd/slopradar
+          mkdir -p "$RUNNER_TEMP/slopradar-input"
+          cp testdata/typescript/functions.ts "$RUNNER_TEMP/slopradar-input/"
+          "$RUNNER_TEMP/slopradar-bin/slopradar" scan "$RUNNER_TEMP/slopradar-input" --format json > "$RUNNER_TEMP/slopradar-scan.json"
+          python3 -c 'import json, sys; assert json.load(open(sys.argv[1]))["functions"]' "$RUNNER_TEMP/slopradar-scan.json"

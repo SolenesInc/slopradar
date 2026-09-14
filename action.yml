@@ -1,0 +1,99 @@
+name: Slopradar
+description: Report complexity erosion and clone changes for a pull request
+
+inputs:
+  base:
+    description: Pull request base branch
+    default: ${{ github.base_ref }}
+  trend-months:
+    description: Months of repository trend to include, or 0 to disable the trend
+    default: "0"
+  comment:
+    description: Upsert the pull request comment
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve action source
+      id: action_source
+      shell: bash
+      env:
+        ACTION_PATH_RAW: ${{ github.action_path }}
+      run: |
+        action_path=$(bash "$ACTION_PATH_RAW/scripts/action-path.sh" "$ACTION_PATH_RAW")
+        echo "path=$action_path" >> "$GITHUB_OUTPUT"
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: ${{ steps.action_source.outputs.path }}/go.mod
+        cache: true
+        cache-dependency-path: ${{ steps.action_source.outputs.path }}/go.sum
+
+    - name: Install slopradar
+      shell: bash
+      env:
+        ACTION_PATH: ${{ steps.action_source.outputs.path }}
+      run: |
+        install_dir="$RUNNER_TEMP/slopradar-bin"
+        bash "$ACTION_PATH/scripts/action-install.sh" "$ACTION_PATH" "$install_dir"
+        echo "$install_dir" >> "$GITHUB_PATH"
+
+    - name: Build slop report
+      id: report
+      shell: bash
+      env:
+        ACTION_PATH: ${{ steps.action_source.outputs.path }}
+        BASE_REF: ${{ inputs.base }}
+        TREND_MONTHS: ${{ inputs.trend-months }}
+      run: |
+        report_path=$(mktemp "$RUNNER_TEMP/slopradar-report.XXXXXX.md")
+        bash "$ACTION_PATH/scripts/action-report.sh" "$BASE_REF" "$TREND_MONTHS" "$report_path"
+        echo "path=$report_path" >> "$GITHUB_OUTPUT"
+
+    - name: Publish job summary
+      id: summary
+      uses: actions/github-script@v7
+      env:
+        ARTIFACT_NAME: slopradar-report-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index }}-${{ github.action }}
+        REPORT_PATH: ${{ steps.report.outputs.path }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        SLOPRADAR_ACTION_PATH: ${{ steps.action_source.outputs.path }}
+      with:
+        script: |
+          const publishSummary = require(`${process.env.SLOPRADAR_ACTION_PATH}/scripts/publish-summary.cjs`)
+          await publishSummary({
+            core,
+            reportPath: process.env.REPORT_PATH,
+            runUrl: process.env.RUN_URL,
+            artifactName: process.env.ARTIFACT_NAME,
+          })
+
+    - name: Preserve full report
+      if: steps.summary.outputs.overflow == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.summary.outputs.artifact-name }}
+        path: ${{ steps.report.outputs.path }}
+        if-no-files-found: error
+
+    - name: Upsert pull request comment
+      uses: actions/github-script@v7
+      env:
+        COMMENT_ENABLED: ${{ inputs.comment }}
+        REPORT_PATH: ${{ steps.report.outputs.path }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        SLOPRADAR_ACTION_PATH: ${{ steps.action_source.outputs.path }}
+      with:
+        github-token: ${{ github.token }}
+        script: |
+          const upsertComment = require(`${process.env.SLOPRADAR_ACTION_PATH}/scripts/upsert-comment.cjs`)
+          await upsertComment({
+            github,
+            context,
+            core,
+            reportPath: process.env.REPORT_PATH,
+            commentEnabled: process.env.COMMENT_ENABLED,
+            runUrl: process.env.RUN_URL,
+          })

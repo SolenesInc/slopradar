@@ -1,0 +1,44 @@
+[
+  {
+    "file": "testdata/typescript/functions.ts",
+    "name": "inspect",
+    "line": 1,
+    "cc": 7,
+    "sloc": 14,
+    "mass": 26.19160170741759,
+    "nested": [
+      {
+        "file": "testdata/typescript/functions.ts",
+        "name": "nested",
+        "line": 4,
+        "cc": 3,
+        "sloc": 3,
+        "mass": 5.196152422706632
+      },
+      {
+        "file": "testdata/typescript/functions.ts",
+        "name": "cb:[value].map",
+        "line": 7,
+        "cc": 1,
+        "sloc": 1,
+        "mass": 1
+      }
+    ]
+  },
+  {
+    "file": "testdata/typescript/functions.ts",
+    "name": "Server.serve",
+    "line": 18,
+    "cc": 4,
+    "sloc": 9,
+    "mass": 12
+  },
+  {
+    "file": "testdata/typescript/functions.ts",
+    "name": "socket.onmessage",
+    "line": 30,
+    "cc": 2,
+    "sloc": 3,
+    "mass": 3.4641016151377544
+  }
+]

@@ -1,0 +1,147 @@
+{
+  "base": "<base>__________________________________",
+  "head": "<head>__________________________________",
+  "touched": [
+    "source.go"
+  ],
+  "buckets": {
+    "source": {
+      "mass_added_over_cc_10": 44.8998886412873,
+      "mass_removed_over_cc_10": 0,
+      "erosion_before": 0,
+      "erosion_after": 0.8453973016392977,
+      "clone_share_before": 0,
+      "clone_share_after": 0.6190476190476191,
+      "clone_lines_touched_before": 0,
+      "clone_lines_touched_after": 26
+    },
+    "tests": {
+      "mass_added_over_cc_10": 0,
+      "mass_removed_over_cc_10": 0,
+      "erosion_before": 0,
+      "erosion_after": 0,
+      "clone_share_before": 0,
+      "clone_share_after": 0,
+      "clone_lines_touched_before": 0,
+      "clone_lines_touched_after": 0
+    }
+  },
+  "functions": [
+    {
+      "file": "source.go",
+      "name": "complex",
+      "before": null,
+      "after": {
+        "file": "source.go",
+        "name": "complex",
+        "bucket": "source",
+        "line": 5,
+        "cc": 12,
+        "sloc": 14,
+        "mass": 44.8998886412873
+      },
+      "delta_mass": 44.8998886412873,
+      "note": "new"
+    },
+    {
+      "file": "source.go",
+      "name": "duplicateA",
+      "before": null,
+      "after": {
+        "file": "source.go",
+        "name": "duplicateA",
+        "bucket": "source",
+        "line": 20,
+        "cc": 1,
+        "sloc": 13,
+        "mass": 3.605551275463989
+      },
+      "delta_mass": 3.605551275463989,
+      "note": "new"
+    },
+    {
+      "file": "source.go",
+      "name": "duplicateB",
+      "before": null,
+      "after": {
+        "file": "source.go",
+        "name": "duplicateB",
+        "bucket": "source",
+        "line": 34,
+        "cc": 1,
+        "sloc": 13,
+        "mass": 3.605551275463989
+      },
+      "delta_mass": 3.605551275463989,
+      "note": "new"
+    }
+  ],
+  "clones_added": [
+    {
+      "id": "c1c1a9537874a5aa7431602372216fd6eed211907f1780a38463b47c35da765f",
+      "a": {
+        "file": "source.go",
+        "start": 20,
+        "end": 32
+      },
+      "b": {
+        "file": "source.go",
+        "start": 34,
+        "end": 46
+      },
+      "tokens": 59,
+      "lines": 13
+    }
+  ],
+  "clones_removed": [],
+  "trend": [
+    {
+      "rev": "<base>__________________________________",
+      "date": "2026-01-10T12:00:00Z",
+      "buckets": {
+        "source": {
+          "functions": 1,
+          "mass": 1,
+          "mass_over_cc_10": 0,
+          "erosion": 0,
+          "source_lines": 2,
+          "clone_lines": 0,
+          "clone_share": 0
+        },
+        "tests": {
+          "functions": 0,
+          "mass": 0,
+          "mass_over_cc_10": 0,
+          "erosion": 0,
+          "source_lines": 0,
+          "clone_lines": 0,
+          "clone_share": 0
+        }
+      }
+    },
+    {
+      "rev": "<head>__________________________________",
+      "date": "2026-02-20T12:00:00Z",
+      "buckets": {
+        "source": {
+          "functions": 4,
+          "mass": 53.11099119221527,
+          "mass_over_cc_10": 44.8998886412873,
+          "erosion": 0.8453973016392977,
+          "source_lines": 42,
+          "clone_lines": 26,
+          "clone_share": 0.6190476190476191
+        },
+        "tests": {
+          "functions": 0,
+          "mass": 0,
+          "mass_over_cc_10": 0,
+          "erosion": 0,
+          "source_lines": 0,
+          "clone_lines": 0,
+          "clone_share": 0
+        }
+      }
+    }
+  ]
+}

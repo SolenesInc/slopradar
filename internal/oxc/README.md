@@ -1,0 +1,91 @@
+# Native Oxc bridge
+
+The TypeScript, TSX and JavaScript analyzer calls Oxc through cgo. Published
+modules contain static libraries for the platform matrix approved in the
+project plan:
+
+| Go platform | Rust target | Provenance |
+| --- | --- | --- |
+| `darwin/arm64` | `aarch64-apple-darwin` | `lib/darwin_arm64/provenance.json` |
+| `darwin/amd64` | `x86_64-apple-darwin` | `lib/darwin_amd64/provenance.json` |
+| `linux/arm64` | `aarch64-unknown-linux-gnu` | `lib/linux_arm64/provenance.json` |
+| `linux/amd64` | `x86_64-unknown-linux-gnu` | `lib/linux_amd64/provenance.json` |
+
+Compatibility receipt at commit `53fc35f`: archives with source SHA-256
+`cd2c41219a8416e8d8ae6eee3b8f131c91e82b9084b6e0a6d13a3a187a710ce3`
+linked, passed the Go suite, installed from source, and ran the object-owner
+fixture on both architectures in `golang:1.27-bookworm`, without Rust, Cargo or
+Node installed. Both consumers used Go `1.27.1`. `ldd --version` in that image
+reports Debian GLIBC `2.36-9+deb12u14`; the linked executable uses libc, libm and
+libgcc_s from the image.
+
+Installing slopradar needs Go, cgo and a C compiler. It does not need Rust,
+Cargo or Node. Rust `1.96.0`, pinned by `rust-toolchain.toml`, is only needed
+to rebuild the libraries.
+
+Generated-file markers are recognized in leading comments before source code.
+Marker text inside string literals does not exclude handwritten files. Unmarked
+generator output can be excluded explicitly through `.slopradar.json`.
+
+## Rebuild
+
+Install the targets without changing the global Rust default:
+
+```sh
+rustup target add --toolchain 1.96.0 \
+  aarch64-apple-darwin \
+  x86_64-apple-darwin \
+  aarch64-unknown-linux-gnu \
+  x86_64-unknown-linux-gnu
+```
+
+Build and verify every archive:
+
+```sh
+python3 scripts/build-oxc.py
+python3 scripts/build-oxc.py --check
+```
+
+The build reads the locked Cargo graph, remaps maintainer paths, and writes an
+archive hash, Rust compiler identity, source hash and deployment target where
+applicable into each provenance file. The generated `archive_<os>_<arch>.go`
+file puts the archive hash into the Go package input, forcing Go to relink when
+only a native archive changes.
+
+## Ownership contract
+
+`slopradar_oxc_analyze` receives file and source byte pointers with explicit
+lengths and consumes them before returning. Rust never retains those pointers.
+The returned byte buffer is Rust-owned and must be passed to
+`slopradar_oxc_release`. Parser diagnostics return no functions, comments or
+tokens. Rust panics are caught and converted to a nonzero bridge status before
+they can unwind into Go.
+
+Function names retain their source ownership. TypeScript namespace declarations
+qualify their functions, classes and object members, including nested and dotted
+namespaces, while function-local names remain relative to the enclosing function. Class methods and arrow-valued
+properties use the enclosing class name; static members and accessors retain
+their source modifiers. Named class expressions use their internal name,
+assignment-owned anonymous expressions use the assignment or property name,
+and otherwise the owner remains `(anonymous class)`.
+
+Object-literal methods, accessors, arrows and anonymous function values use the
+direct variable, assignment, or nested-property path, such as
+`worker.handlers.run`. Function and callback boundaries stop ownership from
+leaking into returned or argument objects. Explicit function-expression names
+take precedence over their property path.
+
+JavaScript line accounting recognizes LF, CRLF, CR, U+2028 and U+2029.
+Comment removal preserves those terminators, so function lines, SLOC, token
+lines and clone coverage share the same source coordinates.
+
+The Rust dependency graph and source checksums are pinned in `Cargo.lock`.
+Oxc's upstream notice is preserved in [LICENSE-OXC](LICENSE-OXC). The checked-in
+[THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt) maps every locked crate and
+the Rust standard library to the license texts included in the bundle. Refresh
+and verify it with:
+
+```sh
+python3 scripts/collect-oxc-licenses.py
+python3 scripts/collect-oxc-licenses.py --check
+```

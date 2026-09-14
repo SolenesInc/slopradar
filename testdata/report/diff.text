@@ -1,0 +1,23 @@
+base    <base>__________________________________
+head    <head>__________________________________
+bucket  mass added over CC 10  mass removed over CC 10  clone lines touched before  clone lines touched after  erosion before  erosion after  clone share before  clone share after
+source  +44.900                -0.000                   0                           26                         0.000           0.845          0.000               0.619
+tests   +0.000                 -0.000                   0                           0                          0.000           0.000          0.000               0.000
+
+functions
+file       name        CC before  CC after  SLOC before  SLOC after  mass delta  note
+source.go  complex     ·          12        ·            14          +44.900     new
+source.go  duplicateA  ·          1         ·            13          +3.606      new
+source.go  duplicateB  ·          1         ·            13          +3.606      new
+
+clone pairs added    1
+first location       second location  tokens  lines
+source.go:20-32      source.go:34-46  59      13
+clone pairs removed  0
+first location       second location  tokens  lines
+
+date                  revision                                  bucket  erosion  clone share
+2026-01-10T12:00:00Z  <base>__________________________________  source  0.000    0.000
+2026-01-10T12:00:00Z  <base>__________________________________  tests   0.000    0.000
+2026-02-20T12:00:00Z  <head>__________________________________  source  0.845    0.619
+2026-02-20T12:00:00Z  <head>__________________________________  tests   0.000    0.000

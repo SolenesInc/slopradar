@@ -1,0 +1,241 @@
+package report
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+	"text/tabwriter"
+	"unicode"
+	"unicode/utf8"
+
+	"github.com/SolenesInc/slopradar/internal/model"
+)
+
+const Explainer = "Cyclomatic complexity (CC) counts decision paths through a function. SLOC is its non-blank, non-comment source lines. Mass is CC × √SLOC; erosion is the share of repository function mass in functions with CC over 10. A clone pair is two ranges with the same tokens after comments are removed, while clone share is the share of source lines in such ranges. Lower erosion and clone share are generally easier to maintain, but duplication is not always wrong. Absolute erosion varies by language, so compare this repository against its own history. This report is information for the reviewer, not a merge gate."
+
+func ValidateFormat(format string) error {
+	if format != "md" && format != "json" && format != "text" {
+		return fmt.Errorf("format must be md, json, or text, got %q", format)
+	}
+	return nil
+}
+
+func ColorEnabled(output io.Writer) bool {
+	file, ok := output.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := file.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
+func WriteSnapshot(output io.Writer, format string, snapshot model.Snapshot, color bool) error {
+	switch format {
+	case "json":
+		return writeJSON(output, snapshot)
+	case "md":
+		return writeSnapshotMarkdown(output, snapshot)
+	case "text":
+		return writeSnapshotText(output, snapshot, color)
+	default:
+		return ValidateFormat(format)
+	}
+}
+
+func WriteDiff(output io.Writer, format string, result model.Diff, color bool) error {
+	switch format {
+	case "json":
+		return writeJSON(output, result)
+	case "md":
+		return writeDiffMarkdown(output, result)
+	case "text":
+		return writeDiffText(output, result, color)
+	default:
+		return ValidateFormat(format)
+	}
+}
+
+func WriteTrend(output io.Writer, format string, points []model.TrendPoint, color bool) error {
+	switch format {
+	case "json":
+		return writeJSON(output, points)
+	case "md":
+		return writeTrendMarkdown(output, points)
+	case "text":
+		return writeTrendText(output, points)
+	default:
+		return ValidateFormat(format)
+	}
+}
+
+func writeJSON(output io.Writer, value any) error {
+	encoder := json.NewEncoder(output)
+	encoder.SetEscapeHTML(false)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(jsonValue(value))
+}
+
+func jsonValue(value any) any {
+	switch item := value.(type) {
+	case model.Snapshot:
+		return serializedSnapshot(item)
+	case model.Diff:
+		return serializedDiff(item)
+	default:
+		return value
+	}
+}
+
+func serializedSnapshot(snapshot model.Snapshot) model.Snapshot {
+	snapshot.Functions = serializedFunctions(snapshot.Functions)
+	snapshot.Clones = serializedClones(snapshot.Clones)
+	snapshot.Skipped = serializedStrings(snapshot.Skipped)
+	if snapshot.SkippedDetails != nil {
+		details := make([]model.SkippedFile, len(snapshot.SkippedDetails))
+		copy(details, snapshot.SkippedDetails)
+		snapshot.SkippedDetails = details
+	}
+	for index := range snapshot.SkippedDetails {
+		snapshot.SkippedDetails[index].File = safeText(snapshot.SkippedDetails[index].File)
+	}
+	snapshot.Warnings = serializedStrings(snapshot.Warnings)
+	return snapshot
+}
+
+func serializedDiff(result model.Diff) model.Diff {
+	result.Touched = serializedStrings(result.Touched)
+	result.Functions = serializedFunctionDeltas(result.Functions)
+	result.ClonesAdded = serializedClones(result.ClonesAdded)
+	result.ClonesRemoved = serializedClones(result.ClonesRemoved)
+	return result
+}
+
+func serializedFunctionDeltas(deltas []model.FunctionDelta) []model.FunctionDelta {
+	if deltas == nil {
+		return nil
+	}
+	result := make([]model.FunctionDelta, len(deltas))
+	copy(result, deltas)
+	for index := range result {
+		result[index].File = safeText(result[index].File)
+		result[index].Before = serializedFunctionPointer(result[index].Before)
+		result[index].After = serializedFunctionPointer(result[index].After)
+		result[index].Nested = serializedFunctionDeltas(result[index].Nested)
+	}
+	return result
+}
+
+func serializedFunctionPointer(function *model.Function) *model.Function {
+	if function == nil {
+		return nil
+	}
+	result := serializedFunction(*function)
+	return &result
+}
+
+func serializedFunctions(functions []model.Function) []model.Function {
+	if functions == nil {
+		return nil
+	}
+	result := make([]model.Function, len(functions))
+	for index, function := range functions {
+		result[index] = serializedFunction(function)
+	}
+	return result
+}
+
+func serializedFunction(function model.Function) model.Function {
+	function.File = safeText(function.File)
+	function.Nested = serializedFunctions(function.Nested)
+	return function
+}
+
+func serializedClones(clones []model.ClonePair) []model.ClonePair {
+	if clones == nil {
+		return nil
+	}
+	result := make([]model.ClonePair, len(clones))
+	copy(result, clones)
+	for index := range result {
+		result[index].A.File = safeText(result[index].A.File)
+		result[index].B.File = safeText(result[index].B.File)
+	}
+	return result
+}
+
+func serializedStrings(values []string) []string {
+	if values == nil {
+		return nil
+	}
+	result := make([]string, len(values))
+	for index, value := range values {
+		result[index] = safeText(value)
+	}
+	return result
+}
+
+type textWriter struct {
+	tabs *tabwriter.Writer
+	err  error
+}
+
+func newTextWriter(output io.Writer) *textWriter {
+	return &textWriter{tabs: tabwriter.NewWriter(output, 0, 4, 2, ' ', 0)}
+}
+
+func (w *textWriter) line(format string, arguments ...any) {
+	if w.err == nil {
+		_, w.err = fmt.Fprintf(w.tabs, format+"\n", arguments...)
+	}
+}
+
+func (w *textWriter) flush() error {
+	if w.err != nil {
+		return w.err
+	}
+	return w.tabs.Flush()
+}
+
+func safeText(value string) string {
+	var result strings.Builder
+	result.Grow(len(value))
+	for len(value) != 0 {
+		character, size := utf8.DecodeRuneInString(value)
+		if character == utf8.RuneError && size == 1 {
+			fmt.Fprintf(&result, "\\x%02X", value[0])
+			value = value[1:]
+			continue
+		}
+		switch character {
+		case '\\':
+			result.WriteString("\\\\")
+		case '\n':
+			result.WriteString("\\n")
+		case '\r':
+			result.WriteString("\\r")
+		case '\t':
+			result.WriteString("\\t")
+		default:
+			if unicode.IsControl(character) || character == '\u2028' || character == '\u2029' {
+				fmt.Fprintf(&result, "\\u%04x", character)
+			} else {
+				result.WriteRune(character)
+			}
+		}
+		value = value[size:]
+	}
+	return result.String()
+}
+
+func metric(function *model.Function, value func(*model.Function) int) string {
+	if function == nil {
+		return "·"
+	}
+	return fmt.Sprint(value(function))
+}
+
+func buckets() []model.Bucket {
+	return []model.Bucket{model.Source, model.Tests}
+}

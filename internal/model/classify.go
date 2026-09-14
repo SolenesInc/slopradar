@@ -1,0 +1,262 @@
+package model
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"path"
+	"strings"
+	"unicode"
+)
+
+const (
+	ConfigFile                   = ".slopradar.json"
+	MaxFileBytes                 = 2 * 1024 * 1024
+	AttnGeneratedTypeScriptBytes = 925234
+	AttnLargestHandwrittenBytes  = 256764
+)
+
+type Config struct {
+	Excludes  []string `json:"excludes"`
+	TestGlobs []string `json:"test_globs"`
+}
+
+type Classification struct {
+	Bucket    Bucket
+	Excluded  bool
+	Generated bool
+}
+
+func ParseConfig(data []byte) (Config, error) {
+	if len(bytes.TrimSpace(data)) == 0 {
+		return Config{}, nil
+	}
+	var config Config
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&config); err != nil {
+		return Config{}, fmt.Errorf("parse %s: %w", ConfigFile, err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return Config{}, fmt.Errorf("parse %s: content after the configuration object", ConfigFile)
+	}
+	if err := validatePatterns("excludes", config.Excludes); err != nil {
+		return Config{}, err
+	}
+	if err := validatePatterns("test_globs", config.TestGlobs); err != nil {
+		return Config{}, err
+	}
+	return config, nil
+}
+
+func validatePatterns(field string, patterns []string) error {
+	for _, pattern := range patterns {
+		normalized := strings.TrimPrefix(pattern, "./")
+		if _, err := path.Match(normalized, ""); err != nil {
+			return fmt.Errorf("parse %s: %s pattern %q: %w", ConfigFile, field, pattern, err)
+		}
+	}
+	return nil
+}
+
+func Classify(file string, content []byte, config Config) Classification {
+	return classify(file, content, config, false)
+}
+
+func ClassifyPrefix(file string, content []byte, config Config) Classification {
+	return classify(file, content, config, true)
+}
+
+func classify(file string, content []byte, config Config, truncated bool) Classification {
+	file = path.Clean(strings.TrimPrefix(file, "./"))
+	if excluded(file, config.Excludes) {
+		return Classification{Excluded: true}
+	}
+	classification := Classification{Bucket: Source, Generated: generated(file, content, truncated)}
+	if isTest(file, config.TestGlobs) {
+		classification.Bucket = Tests
+	}
+	return classification
+}
+
+func ExcludedDirectory(directory string, additions []string) bool {
+	directory = path.Clean(strings.TrimPrefix(directory, "./"))
+	for _, part := range strings.Split(directory, "/") {
+		if strings.HasPrefix(part, ".") || part == "vendor" || part == "node_modules" || part == "dist" || part == "target" {
+			return true
+		}
+	}
+	for _, pattern := range additions {
+		pattern = strings.TrimPrefix(pattern, "./")
+		if strings.HasSuffix(pattern, "/") && matchesDirectoryPattern(directory, strings.TrimSuffix(pattern, "/")) {
+			return true
+		}
+	}
+	return false
+}
+
+func excluded(file string, additions []string) bool {
+	extension := strings.ToLower(path.Ext(file))
+	parts := strings.Split(file, "/")
+	for _, part := range parts[:len(parts)-1] {
+		switch {
+		case strings.HasPrefix(part, "."), part == "vendor", part == "node_modules", part == "dist", part == "target", part == "testdata" && extension == ".go":
+			return true
+		}
+	}
+	return matchesAny(file, additions)
+}
+
+func isTest(file string, additions []string) bool {
+	base := path.Base(file)
+	ext := strings.ToLower(path.Ext(base))
+	stem := strings.TrimSuffix(base, path.Ext(base))
+	parts := strings.Split(file, "/")
+	for _, part := range parts[:len(parts)-1] {
+		if part == "__tests__" && isJavaScriptExtension(ext) || part == "tests" && (ext == ".py" || ext == ".rs") {
+			return true
+		}
+	}
+	switch ext {
+	case ".go":
+		if strings.HasSuffix(base, "_test.go") {
+			return true
+		}
+	case ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs":
+		if ext == ".ts" || ext == ".mts" || ext == ".cts" {
+			stem = strings.TrimSuffix(stem, ".d")
+		}
+		if strings.HasSuffix(stem, ".test") || strings.HasSuffix(stem, ".spec") {
+			return true
+		}
+	case ".py":
+		if strings.HasPrefix(base, "test_") || strings.HasSuffix(base, "_test.py") {
+			return true
+		}
+	}
+	return matchesAny(file, additions)
+}
+
+func isJavaScriptExtension(extension string) bool {
+	switch extension {
+	case ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs":
+		return true
+	default:
+		return false
+	}
+}
+
+func matchesAny(file string, patterns []string) bool {
+	for _, pattern := range patterns {
+		pattern = strings.TrimPrefix(pattern, "./")
+		if matched, err := path.Match(pattern, file); err == nil && matched {
+			return true
+		}
+		if strings.HasSuffix(pattern, "/") && matchesDirectoryPattern(path.Dir(file), strings.TrimSuffix(pattern, "/")) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchesDirectoryPattern(directory, pattern string) bool {
+	for directory != "." && directory != "/" {
+		if matched, err := path.Match(pattern, directory); err == nil && matched {
+			return true
+		}
+		directory = path.Dir(directory)
+	}
+	return false
+}
+
+func generated(file string, content []byte, truncated bool) bool {
+	content = bytes.TrimPrefix(content, []byte{0xef, 0xbb, 0xbf})
+	extension := strings.ToLower(path.Ext(file))
+	for {
+		comment, rest, ok := leadingComment(bytes.TrimLeftFunc(content, unicode.IsSpace), extension)
+		if !ok {
+			return false
+		}
+		lower := bytes.ToLower(comment)
+		directive := bytes.Contains(comment, []byte("Code generated ")) && bytes.Contains(comment, []byte(" DO NOT EDIT."))
+		if extension == ".go" {
+			directive = goGeneratedDirective(comment, truncated && len(rest) == 0)
+		}
+		if directive ||
+			bytes.Contains(lower, []byte("@generated")) || bytes.Contains(lower, []byte("linguist-generated")) {
+			return true
+		}
+		content = rest
+	}
+}
+
+func goGeneratedDirective(comment []byte, truncated bool) bool {
+	if truncated {
+		comment = comment[:bytes.LastIndexByte(comment, '\n')+1]
+	}
+	for line := range bytes.SplitSeq(comment, []byte{'\n'}) {
+		line = bytes.TrimSuffix(line, []byte{'\r'})
+		if rest, ok := bytes.CutPrefix(line, []byte("// Code generated ")); ok && bytes.HasSuffix(rest, []byte(" DO NOT EDIT.")) {
+			return true
+		}
+	}
+	return false
+}
+
+func leadingComment(content []byte, extension string) ([]byte, []byte, bool) {
+	hashComment := extension == ".py" && bytes.HasPrefix(content, []byte("#"))
+	shebang := bytes.HasPrefix(content, []byte("#!")) && !bytes.HasPrefix(content, []byte("#!["))
+	if bytes.HasPrefix(content, []byte("//")) || hashComment || shebang {
+		terminators := "\n"
+		switch extension {
+		case ".py":
+			terminators = "\n\r"
+		case ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs":
+			terminators = "\n\r\u2028\u2029"
+		}
+		end := bytes.IndexAny(content, terminators)
+		if end < 0 {
+			return content, nil, true
+		}
+		return content[:end], content[end:], true
+	}
+	var opener, closer []byte
+	switch {
+	case bytes.HasPrefix(content, []byte("/*")):
+		if extension == ".rs" {
+			end := nestedCommentEnd(content)
+			return content[:end], content[end:], true
+		}
+		opener, closer = []byte("/*"), []byte("*/")
+	case bytes.HasPrefix(content, []byte("<!--")):
+		opener, closer = []byte("<!--"), []byte("-->")
+	default:
+		return nil, nil, false
+	}
+	end := bytes.Index(content[len(opener):], closer)
+	if end < 0 {
+		return content, nil, true
+	}
+	end += len(opener) + len(closer)
+	return content[:end], content[end:], true
+}
+
+func nestedCommentEnd(content []byte) int {
+	depth := 1
+	for i := 2; i+1 < len(content); i++ {
+		switch string(content[i : i+2]) {
+		case "/*":
+			depth++
+			i++
+		case "*/":
+			depth--
+			i++
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
+	return len(content)
+}

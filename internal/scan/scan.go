@@ -1,0 +1,316 @@
+package scan
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path"
+	"path/filepath"
+	"slices"
+	"sort"
+	"strings"
+
+	analysiscache "github.com/SolenesInc/slopradar/internal/cache"
+	"github.com/SolenesInc/slopradar/internal/clones"
+	"github.com/SolenesInc/slopradar/internal/gitread"
+	"github.com/SolenesInc/slopradar/internal/lang"
+	"github.com/SolenesInc/slopradar/internal/lang/golang"
+	"github.com/SolenesInc/slopradar/internal/lang/python"
+	"github.com/SolenesInc/slopradar/internal/lang/rust"
+	"github.com/SolenesInc/slopradar/internal/lang/typescript"
+	"github.com/SolenesInc/slopradar/internal/model"
+)
+
+type analyzedFile struct {
+	blob     gitread.Blob
+	analysis analyzer
+	result   lang.Result
+	bucket   model.Bucket
+}
+
+type analyzer struct {
+	language string
+	dialect  string
+	run      func(string, []byte) (lang.Result, error)
+}
+
+func Directory(root string) (model.Snapshot, error) {
+	config, err := directoryConfig(root)
+	if err != nil {
+		return model.Snapshot{}, err
+	}
+	var packageFiles []gitread.Blob
+	filter := func(file string, _ int64, directory bool) bool {
+		if directory {
+			return !model.ExcludedDirectory(file, config.Excludes)
+		}
+		if path.Base(file) == "Cargo.toml" {
+			packageFiles = append(packageFiles, gitread.Blob{BlobInfo: gitread.BlobInfo{Path: file}})
+			return false
+		}
+		if model.Classify(file, nil, config).Excluded {
+			return false
+		}
+		if _, ok := analyzerFor(file); !ok {
+			return false
+		}
+		return true
+	}
+	blobs, err := gitread.ReadDirectoryFilteredLimited(root, filter, model.MaxFileBytes)
+	if err != nil {
+		return model.Snapshot{}, err
+	}
+	return blobsWithConfig("directory", append(blobs, packageFiles...), config, nil)
+}
+
+func Revision(ctx context.Context, root, rev string) (model.Snapshot, error) {
+	return RevisionWithCache(ctx, root, rev, nil)
+}
+
+func RevisionWithCache(ctx context.Context, root, rev string, cache *analysiscache.Store) (model.Snapshot, error) {
+	repository, err := gitread.Open(root)
+	if err != nil {
+		return model.Snapshot{}, err
+	}
+	resolved, err := repository.ResolveTree(ctx, rev)
+	if err != nil {
+		return model.Snapshot{}, err
+	}
+	infos, err := repository.ListTree(ctx, resolved)
+	if err != nil {
+		return model.Snapshot{}, err
+	}
+	config, err := revisionConfig(ctx, repository, infos)
+	if err != nil {
+		return model.Snapshot{}, err
+	}
+	var packageFiles []gitread.Blob
+	selected := make([]gitread.BlobInfo, 0, len(infos))
+	for _, info := range infos {
+		if path.Base(info.Path) == "Cargo.toml" {
+			packageFiles = append(packageFiles, gitread.Blob{BlobInfo: gitread.BlobInfo{Path: info.Path}})
+			continue
+		}
+		if model.Classify(info.Path, nil, config).Excluded {
+			continue
+		}
+		if _, ok := analyzerFor(info.Path); !ok {
+			continue
+		}
+		selected = append(selected, info)
+	}
+	blobs, err := repository.ReadBlobsLimited(ctx, selected, model.MaxFileBytes)
+	if err != nil {
+		return model.Snapshot{}, err
+	}
+	return blobsWithConfig(resolved, append(blobs, packageFiles...), config, cache)
+}
+
+func Blobs(rev string, blobs []gitread.Blob) (model.Snapshot, error) {
+	blobs = append([]gitread.Blob(nil), blobs...)
+	sort.Slice(blobs, func(i, j int) bool { return blobs[i].Path < blobs[j].Path })
+	config, err := configFrom(blobs)
+	if err != nil {
+		return model.Snapshot{}, err
+	}
+	return blobsWithConfig(rev, blobs, config, nil)
+}
+
+func blobsWithConfig(rev string, blobs []gitread.Blob, config model.Config, cache *analysiscache.Store) (model.Snapshot, error) {
+	blobs = append([]gitread.Blob(nil), blobs...)
+	sort.Slice(blobs, func(i, j int) bool { return blobs[i].Path < blobs[j].Path })
+	snapshot := model.Snapshot{
+		Rev: rev, Functions: []model.Function{}, Clones: []model.ClonePair{}, CloneCoverage: []model.CloneCoverage{}, AnalysisPaths: []model.AnalysisPath{},
+		Buckets: map[model.Bucket]model.Totals{model.Source: {}, model.Tests: {}}, Skipped: []string{}, Warnings: []string{},
+	}
+	functions := map[model.Bucket][]model.Function{model.Source: {}, model.Tests: {}}
+	cloneFiles := []clones.File{}
+	ignored := map[string]bool{}
+	packages := map[string]bool{}
+	var files []analyzedFile
+	for _, blob := range blobs {
+		if path.Base(blob.Path) == "Cargo.toml" {
+			packages[path.Dir(blob.Path)] = true
+			continue
+		}
+		classify := model.Classify
+		if int64(len(blob.Content)) < blob.Size {
+			classify = model.ClassifyPrefix
+		}
+		classification := classify(blob.Path, blob.Content, config)
+		if classification.Excluded || classification.Generated {
+			ignored[blob.Path] = true
+			continue
+		}
+		if blob.Size > model.MaxFileBytes {
+			snapshot.Skipped = append(snapshot.Skipped, blob.Path)
+			snapshot.SkippedDetails = append(snapshot.SkippedDetails, model.SkippedFile{File: blob.Path, MaxBytes: model.MaxFileBytes, AskedBytes: blob.Size})
+			continue
+		}
+		analyze, ok := analyzerFor(blob.Path)
+		if !ok {
+			continue
+		}
+		result, found := cache.Get(blob.OID, analyze.dialect, blob.Path)
+		if !found {
+			analyzed, err := analyze.run(blob.Path, blob.Content)
+			if err != nil {
+				return model.Snapshot{}, err
+			}
+			result = analyzed
+			cache.Put(blob.OID, analyze.dialect, result)
+		}
+		files = append(files, analyzedFile{blob: blob, analysis: analyze, result: result, bucket: classification.Bucket})
+	}
+	snapshot.Warnings = append(snapshot.Warnings, classifyRustModules(files, ignored, packages, config)...)
+	for _, file := range files {
+		blob, analyze, result, bucket := file.blob, file.analysis, file.result, file.bucket
+		lineSource := blob.Content
+		if analyze.language == "python" {
+			lineSource = lang.NormalizePythonNewlines(lineSource)
+		}
+		gitLineCoordinates := lang.CountLineTerminators(blob.Content, false) == lang.CountLineTerminators(lineSource, analyze.language == "typescript")
+		snapshot.AnalysisPaths = append(snapshot.AnalysisPaths, model.AnalysisPath{File: blob.Path, Bucket: bucket, GitLineCoordinates: gitLineCoordinates})
+		snapshot.Warnings = append(snapshot.Warnings, result.Warnings...)
+		sourceLines := lang.SourceLines(lineSource, result.Comments, result.TestSpans)
+		if analyze.language == "typescript" {
+			sourceLines = lang.JavaScriptSourceLines(blob.Content, result.Comments, result.TestSpans)
+		}
+		if bucket == model.Tests {
+			sourceLines[model.Tests] = append(sourceLines[model.Tests], sourceLines[model.Source]...)
+			sort.Ints(sourceLines[model.Tests])
+			sourceLines[model.Tests] = slices.Compact(sourceLines[model.Tests])
+			sourceLines[model.Source] = nil
+			for i := range result.Tokens {
+				result.Tokens[i].Bucket = model.Tests
+			}
+		}
+		for bucket, lines := range sourceLines {
+			totals := snapshot.Buckets[bucket]
+			totals.SourceLines += len(lines)
+			snapshot.Buckets[bucket] = totals
+		}
+		cloneFiles = append(cloneFiles, clones.File{Path: blob.Path, Language: analyze.language, Tokens: result.Tokens, SourceLines: sourceLines})
+		for i, function := range result.Functions {
+			functionBucket := bucket
+			if functionBucket == model.Source && i < len(result.FunctionBuckets) {
+				functionBucket = result.FunctionBuckets[i]
+			}
+			functions[functionBucket] = append(functions[functionBucket], function)
+			snapshot.Functions = append(snapshot.Functions, withBucket(function, functionBucket))
+		}
+	}
+	cloneResult := clones.Detect(cloneFiles)
+	snapshot.Clones = cloneResult.Pairs
+	snapshot.CloneCoverage = cloneResult.Coverage
+	for _, bucket := range []model.Bucket{model.Source, model.Tests} {
+		totals := model.Summarize(functions[bucket])
+		totals.SourceLines = snapshot.Buckets[bucket].SourceLines
+		totals.CloneLines = cloneResult.Total[bucket]
+		if totals.SourceLines != 0 {
+			totals.CloneShare = float64(totals.CloneLines) / float64(totals.SourceLines)
+		}
+		snapshot.Buckets[bucket] = totals
+	}
+	sort.Slice(snapshot.Functions, func(i, j int) bool {
+		if snapshot.Functions[i].File != snapshot.Functions[j].File {
+			return snapshot.Functions[i].File < snapshot.Functions[j].File
+		}
+		if snapshot.Functions[i].Line != snapshot.Functions[j].Line {
+			return snapshot.Functions[i].Line < snapshot.Functions[j].Line
+		}
+		return snapshot.Functions[i].Name < snapshot.Functions[j].Name
+	})
+	sort.Strings(snapshot.Skipped)
+	sort.Slice(snapshot.SkippedDetails, func(i, j int) bool { return snapshot.SkippedDetails[i].File < snapshot.SkippedDetails[j].File })
+	sort.Strings(snapshot.Warnings)
+	return snapshot, nil
+}
+
+func withBucket(function model.Function, bucket model.Bucket) model.Function {
+	if function.Bucket == model.Tests {
+		bucket = model.Tests
+	}
+	function.Bucket = bucket
+	for i := range function.Nested {
+		function.Nested[i] = withBucket(function.Nested[i], bucket)
+	}
+	return function
+}
+
+func directoryConfig(root string) (model.Config, error) {
+	file := filepath.Join(root, model.ConfigFile)
+	info, err := os.Lstat(file)
+	if errors.Is(err, os.ErrNotExist) {
+		return model.Config{}, nil
+	}
+	if err != nil {
+		return model.Config{}, fmt.Errorf("inspect %s: %w", model.ConfigFile, err)
+	}
+	if !info.Mode().IsRegular() {
+		return model.Config{}, nil
+	}
+	if info.Size() > model.MaxFileBytes {
+		return model.Config{}, fmt.Errorf("read %s: max_file_bytes=%d, asked_bytes=%d", model.ConfigFile, model.MaxFileBytes, info.Size())
+	}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return model.Config{}, fmt.Errorf("read %s: %w", model.ConfigFile, err)
+	}
+	return model.ParseConfig(data)
+}
+
+func revisionConfig(ctx context.Context, repository *gitread.Repository, infos []gitread.BlobInfo) (model.Config, error) {
+	for _, info := range infos {
+		if info.Path != model.ConfigFile {
+			continue
+		}
+		if info.Size > model.MaxFileBytes {
+			return model.Config{}, fmt.Errorf("read %s: max_file_bytes=%d, asked_bytes=%d", model.ConfigFile, model.MaxFileBytes, info.Size)
+		}
+		blobs, err := repository.ReadBlobs(ctx, []gitread.BlobInfo{info})
+		if err != nil {
+			return model.Config{}, err
+		}
+		return model.ParseConfig(blobs[0].Content)
+	}
+	return model.Config{}, nil
+}
+
+func configFrom(blobs []gitread.Blob) (model.Config, error) {
+	for _, blob := range blobs {
+		if path.Clean(blob.Path) == model.ConfigFile {
+			asked := max(blob.Size, int64(len(blob.Content)))
+			if asked > model.MaxFileBytes {
+				return model.Config{}, fmt.Errorf("read %s: max_file_bytes=%d, asked_bytes=%d", model.ConfigFile, model.MaxFileBytes, asked)
+			}
+			return model.ParseConfig(blob.Content)
+		}
+	}
+	return model.Config{}, nil
+}
+
+func analyzerFor(file string) (analyzer, bool) {
+	lower := strings.ToLower(file)
+	extension := path.Ext(lower)
+	switch extension {
+	case ".go":
+		return analyzer{language: "go", dialect: "go", run: golang.Analyze}, true
+	case ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs":
+		dialect := "typescript:" + strings.TrimPrefix(extension, ".")
+		for _, suffix := range []string{".d.ts", ".d.mts", ".d.cts"} {
+			if strings.HasSuffix(lower, suffix) {
+				dialect = "typescript:" + strings.TrimPrefix(suffix, ".")
+				break
+			}
+		}
+		return analyzer{language: "typescript", dialect: dialect, run: typescript.Analyze}, true
+	case ".py":
+		return analyzer{language: "python", dialect: "python", run: python.Analyze}, true
+	case ".rs":
+		return analyzer{language: "rust", dialect: "rust", run: rust.Analyze}, true
+	default:
+		return analyzer{}, false
+	}
+}

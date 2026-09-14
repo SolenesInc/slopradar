@@ -1,0 +1,37 @@
+[
+  {
+    "file": "testdata/rust/functions.rs",
+    "name": "inspect",
+    "line": 1,
+    "cc": 11,
+    "sloc": 18,
+    "mass": 46.66904755831213,
+    "nested": [
+      {
+        "file": "testdata/rust/functions.rs",
+        "name": "normalize",
+        "line": 3,
+        "cc": 2,
+        "sloc": 1,
+        "mass": 2
+      }
+    ]
+  },
+  {
+    "file": "testdata/rust/functions.rs",
+    "name": "Worker::run",
+    "line": 24,
+    "cc": 2,
+    "sloc": 4,
+    "mass": 4
+  },
+  {
+    "file": "testdata/rust/functions.rs",
+    "name": "tests::test_only",
+    "bucket": "tests",
+    "line": 32,
+    "cc": 1,
+    "sloc": 3,
+    "mass": 1.7320508075688772
+  }
+]
