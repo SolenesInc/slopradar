@@ -8,6 +8,7 @@ import (
 	"io"
 	"path"
 	"strings"
+	"unicode"
 )
 
 const (
@@ -61,11 +62,19 @@ func validatePatterns(field string, patterns []string) error {
 }
 
 func Classify(file string, content []byte, config Config) Classification {
+	return classify(file, content, config, false)
+}
+
+func ClassifyPrefix(file string, content []byte, config Config) Classification {
+	return classify(file, content, config, true)
+}
+
+func classify(file string, content []byte, config Config, truncated bool) Classification {
 	file = path.Clean(strings.TrimPrefix(file, "./"))
 	if excluded(file, config.Excludes) {
 		return Classification{Excluded: true}
 	}
-	classification := Classification{Bucket: Source, Generated: generated(file, content)}
+	classification := Classification{Bucket: Source, Generated: generated(file, content, truncated)}
 	if isTest(file, config.TestGlobs) {
 		classification.Bucket = Tests
 	}
@@ -81,7 +90,7 @@ func ExcludedDirectory(directory string, additions []string) bool {
 	}
 	for _, pattern := range additions {
 		pattern = strings.TrimPrefix(pattern, "./")
-		if strings.HasSuffix(pattern, "/") && strings.HasPrefix(directory+"/", pattern) {
+		if strings.HasSuffix(pattern, "/") && matchesDirectoryPattern(directory, strings.TrimSuffix(pattern, "/")) {
 			return true
 		}
 	}
@@ -145,25 +154,35 @@ func matchesAny(file string, patterns []string) bool {
 		if matched, err := path.Match(pattern, file); err == nil && matched {
 			return true
 		}
-		if strings.HasSuffix(pattern, "/") && strings.HasPrefix(file, pattern) {
+		if strings.HasSuffix(pattern, "/") && matchesDirectoryPattern(path.Dir(file), strings.TrimSuffix(pattern, "/")) {
 			return true
 		}
 	}
 	return false
 }
 
-func generated(file string, content []byte) bool {
+func matchesDirectoryPattern(directory, pattern string) bool {
+	for directory != "." && directory != "/" {
+		if matched, err := path.Match(pattern, directory); err == nil && matched {
+			return true
+		}
+		directory = path.Dir(directory)
+	}
+	return false
+}
+
+func generated(file string, content []byte, truncated bool) bool {
 	content = bytes.TrimPrefix(content, []byte{0xef, 0xbb, 0xbf})
 	extension := strings.ToLower(path.Ext(file))
 	for {
-		comment, rest, ok := leadingComment(bytes.TrimSpace(content), extension)
+		comment, rest, ok := leadingComment(bytes.TrimLeftFunc(content, unicode.IsSpace), extension)
 		if !ok {
 			return false
 		}
 		lower := bytes.ToLower(comment)
 		directive := bytes.Contains(comment, []byte("Code generated ")) && bytes.Contains(comment, []byte(" DO NOT EDIT."))
 		if extension == ".go" {
-			directive = goGeneratedDirective(comment)
+			directive = goGeneratedDirective(comment, truncated && len(rest) == 0)
 		}
 		if directive ||
 			bytes.Contains(lower, []byte("@generated")) || bytes.Contains(lower, []byte("linguist-generated")) {
@@ -173,7 +192,10 @@ func generated(file string, content []byte) bool {
 	}
 }
 
-func goGeneratedDirective(comment []byte) bool {
+func goGeneratedDirective(comment []byte, truncated bool) bool {
+	if truncated {
+		comment = comment[:bytes.LastIndexByte(comment, '\n')+1]
+	}
 	for line := range bytes.SplitSeq(comment, []byte{'\n'}) {
 		line = bytes.TrimSuffix(line, []byte{'\r'})
 		if rest, ok := bytes.CutPrefix(line, []byte("// Code generated ")); ok && bytes.HasSuffix(rest, []byte(" DO NOT EDIT.")) {

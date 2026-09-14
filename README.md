@@ -140,6 +140,10 @@ paths to the built-in classification:
 }
 ```
 
+Patterns use Go’s `path.Match` syntax. A trailing slash matches a directory
+and every descendant, including wildcard directories such as
+`packages/*/generated/`; the same rule applies to `excludes` and `test_globs`.
+
 Built-in exclusions are `vendor/`, `node_modules/`, `dist/`, `target/`, Go files
 under `testdata/`, and dot directories. Built-in test paths are Go `_test.go` files;
 JavaScript and TypeScript `.test.*`, `.spec.*`, and `__tests__/`; Python
@@ -321,7 +325,9 @@ assembled.
 - Files above `max_file_bytes=2097152` are checked for a leading generated marker
   within that bounded prefix. Recognized generated files are ignored; other
   oversized files are skipped and named with both the limit and requested size.
-  Go generation directives must end on a complete line within the prefix. This tripwire was set above attn revision `e05560650`'s
+  Canonical Go generation directives must end on a complete line within the
+  prefix; leading block markers such as `/* @generated */` also work in
+  single-line files. This tripwire was set above attn revision `e05560650`'s
   measured largest source file (`925234` bytes) and largest handwritten source
   file (`256764` bytes).
 

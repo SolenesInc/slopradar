@@ -669,11 +669,13 @@ func TestOversizedGeneratedFilesAreIgnoredBeforeSizeSkips(t *testing.T) {
 	gitForScan(t, dir, "config", "user.name", "Slopradar Test")
 	gitForScan(t, dir, "config", "user.email", "test@slopradar.invalid")
 	files := map[string]string{
-		"generated.go": "// Code generated fixture. DO NOT EDIT.\n",
-		"generated.ts": "/* @generated */\n",
-		"generated.py": "# @generated\n",
-		"generated.rs": "// linguist-generated\n",
-		"large.go":     "package fixture\n",
+		"generated.go":  "// Code generated fixture. DO NOT EDIT.\n",
+		"singleline.go": "/* @generated */ package generated;",
+		"afterline.go":  "// license\n/* @generated */ package generated;",
+		"generated.ts":  "/* @generated */\n",
+		"generated.py":  "# @generated\n",
+		"generated.rs":  "// linguist-generated\n",
+		"large.go":      "package fixture\n",
 	}
 	var blobs []gitread.Blob
 	for name, header := range files {
@@ -773,5 +775,36 @@ func TestRustCompanionAttributesDoNotContributeSourceClones(t *testing.T) {
 	}
 	if got.Buckets[model.Source].SourceLines != 0 || got.Buckets[model.Source].CloneLines != 0 || got.Buckets[model.Tests].CloneLines == 0 {
 		t.Fatalf("buckets %#v", got.Buckets)
+	}
+}
+
+func TestWildcardDirectoryPatternsApplyToGitAndDirectoryScans(t *testing.T) {
+	dir := t.TempDir()
+	gitForScan(t, dir, "init", "-b", "main")
+	gitForScan(t, dir, "config", "user.name", "Slopradar Test")
+	gitForScan(t, dir, "config", "user.email", "test@slopradar.invalid")
+	for _, file := range []string{"packages/a/generated/deep/invalid.go", "packages/b/generated/invalid.go"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, file)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		writeScanFile(t, dir, file, "invalid Go syntax")
+	}
+	for _, file := range []string{"packages/a/checks/deep/helper.go", "packages/b/checks/helper.go", "packages/a/generated_other/source.go"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, file)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		writeScanFile(t, dir, file, "package fixture\nfunc kept() {}\n")
+	}
+	writeScanFile(t, dir, model.ConfigFile, `{"excludes":["packages/*/generated/"],"test_globs":["packages/*/checks/"]}`)
+	gitForScan(t, dir, "add", ".")
+	gitForScan(t, dir, "commit", "-m", "directory glob fixtures")
+	for label, scan := range map[string]func() (model.Snapshot, error){"directory": func() (model.Snapshot, error) { return Directory(dir) }, "revision": func() (model.Snapshot, error) { return Revision(context.Background(), dir, "HEAD") }} {
+		got, err := scan()
+		if err != nil {
+			t.Fatalf("%s: %v", label, err)
+		}
+		if got.Buckets[model.Source].Functions != 1 || got.Buckets[model.Tests].Functions != 2 {
+			t.Fatalf("%s: buckets %#v", label, got.Buckets)
+		}
 	}
 }

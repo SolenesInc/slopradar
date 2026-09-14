@@ -327,48 +327,59 @@ func BenchmarkDiffLineChanges(b *testing.B) {
 }
 
 func TestDiffReportsConfigOnlyExclusionAndBucketChanges(t *testing.T) {
-	dir := t.TempDir()
-	gitCommand(t, dir, "init", "-b", "main")
-	gitCommand(t, dir, "config", "user.name", "Slopradar Test")
-	gitCommand(t, dir, "config", "user.email", "test@slopradar.invalid")
-	writeFile(t, dir, "configured.go", cc12Source()+duplicateA())
-	writeFile(t, dir, "peer.go", "package fixture\n"+duplicateB())
-	gitCommand(t, dir, "add", ".")
-	gitCommand(t, dir, "commit", "-m", "base")
-	base := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+	for _, test := range []struct{ file, pattern string }{
+		{file: "configured.go", pattern: "configured.go"},
+		{file: "packages/a/generated/deep/configured.go", pattern: "packages/*/generated/"},
+	} {
+		t.Run(test.pattern, func(t *testing.T) {
+			dir := t.TempDir()
+			gitCommand(t, dir, "init", "-b", "main")
+			gitCommand(t, dir, "config", "user.name", "Slopradar Test")
+			gitCommand(t, dir, "config", "user.email", "test@slopradar.invalid")
+			if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, test.file)), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, dir, test.file, cc12Source()+duplicateA())
+			writeFile(t, dir, "peer.go", "package fixture\n"+duplicateB())
+			gitCommand(t, dir, "add", ".")
+			gitCommand(t, dir, "commit", "-m", "base")
+			base := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
 
-	writeFile(t, dir, model.ConfigFile, `{"excludes":["configured.go"]}`)
-	gitCommand(t, dir, "add", model.ConfigFile)
-	gitCommand(t, dir, "commit", "-m", "exclude configured source")
-	excluded := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+			writeFile(t, dir, model.ConfigFile, fmt.Sprintf(`{"excludes":[%q]}`, test.pattern))
+			gitCommand(t, dir, "add", model.ConfigFile)
+			gitCommand(t, dir, "commit", "-m", "exclude configured source")
+			excluded := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
 
-	writeFile(t, dir, model.ConfigFile, `{"test_globs":["configured.go"]}`)
-	gitCommand(t, dir, "add", model.ConfigFile)
-	gitCommand(t, dir, "commit", "-m", "move configured source to tests")
-	tests := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
+			writeFile(t, dir, model.ConfigFile, fmt.Sprintf(`{"test_globs":[%q]}`, test.pattern))
+			gitCommand(t, dir, "add", model.ConfigFile)
+			gitCommand(t, dir, "commit", "-m", "move configured source to tests")
+			tests := strings.TrimSpace(gitCommand(t, dir, "rev-parse", "HEAD"))
 
-	t.Chdir(dir)
-	wantTouched := []string{model.ConfigFile, "configured.go"}
-	excludedDiff := commandDiff(t, base, excluded)
-	if !reflect.DeepEqual(excludedDiff.Touched, wantTouched) {
-		t.Fatalf("excluded touched = %#v, want %#v", excludedDiff.Touched, wantTouched)
-	}
-	assertFunctionNotes(t, excludedDiff, map[string]string{"complex": "removed", "duplicateA": "removed"})
-	complexMass := functionByName(t, excludedDiff, "complex").Before.Mass
-	excludedSource := excludedDiff.Buckets[model.Source]
-	if excludedSource.MassRemovedOverCC10 != complexMass || excludedSource.CloneLinesTouchedBefore == 0 || excludedSource.CloneLinesTouchedAfter != 0 || len(excludedDiff.ClonesRemoved) != 1 || len(excludedDiff.ClonesAdded) != 0 {
-		t.Fatalf("excluded diff = %#v", excludedDiff)
-	}
+			t.Chdir(dir)
+			wantTouched := []string{model.ConfigFile, test.file}
+			excludedDiff := commandDiff(t, base, excluded)
+			if !reflect.DeepEqual(excludedDiff.Touched, wantTouched) {
+				t.Fatalf("excluded touched = %#v, want %#v", excludedDiff.Touched, wantTouched)
+			}
+			assertFunctionNotes(t, excludedDiff, map[string]string{"complex": "removed", "duplicateA": "removed"})
+			complexMass := functionByName(t, excludedDiff, "complex").Before.Mass
+			excludedSource := excludedDiff.Buckets[model.Source]
+			if excludedSource.MassRemovedOverCC10 != complexMass || excludedSource.CloneLinesTouchedBefore == 0 || excludedSource.CloneLinesTouchedAfter != 0 || len(excludedDiff.ClonesRemoved) != 1 || len(excludedDiff.ClonesAdded) != 0 {
+				t.Fatalf("excluded diff = %#v", excludedDiff)
+			}
 
-	bucketDiff := commandDiff(t, base, tests)
-	if !reflect.DeepEqual(bucketDiff.Touched, wantTouched) {
-		t.Fatalf("bucket touched = %#v, want %#v", bucketDiff.Touched, wantTouched)
-	}
-	assertFunctionNotes(t, bucketDiff, map[string]string{"complex": "", "duplicateA": ""})
-	source := bucketDiff.Buckets[model.Source]
-	testBucket := bucketDiff.Buckets[model.Tests]
-	if source.MassRemovedOverCC10 != complexMass || testBucket.MassAddedOverCC10 != complexMass || source.CloneLinesTouchedBefore == 0 || source.CloneLinesTouchedAfter != 0 || testBucket.CloneLinesTouchedBefore != 0 || testBucket.CloneLinesTouchedAfter != source.CloneLinesTouchedBefore || len(bucketDiff.ClonesAdded) != 0 || len(bucketDiff.ClonesRemoved) != 0 {
-		t.Fatalf("bucket diff = %#v", bucketDiff)
+			bucketDiff := commandDiff(t, base, tests)
+			if !reflect.DeepEqual(bucketDiff.Touched, wantTouched) {
+				t.Fatalf("bucket touched = %#v, want %#v", bucketDiff.Touched, wantTouched)
+			}
+			assertFunctionNotes(t, bucketDiff, map[string]string{"complex": "", "duplicateA": ""})
+			source := bucketDiff.Buckets[model.Source]
+			testBucket := bucketDiff.Buckets[model.Tests]
+			if source.MassRemovedOverCC10 != complexMass || testBucket.MassAddedOverCC10 != complexMass || source.CloneLinesTouchedBefore == 0 || source.CloneLinesTouchedAfter != 0 || testBucket.CloneLinesTouchedBefore != 0 || testBucket.CloneLinesTouchedAfter != source.CloneLinesTouchedBefore || len(bucketDiff.ClonesAdded) != 0 || len(bucketDiff.ClonesRemoved) != 0 {
+				t.Fatalf("bucket diff = %#v", bucketDiff)
+			}
+
+		})
 	}
 }
 

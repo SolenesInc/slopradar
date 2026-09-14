@@ -1,7 +1,6 @@
 package scan
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -135,11 +134,11 @@ func blobsWithConfig(rev string, blobs []gitread.Blob, config model.Config, cach
 			packages[path.Dir(blob.Path)] = true
 			continue
 		}
-		content := blob.Content
-		if int64(len(content)) < blob.Size && strings.EqualFold(path.Ext(blob.Path), ".go") {
-			content = content[:bytes.LastIndexByte(content, '\n')+1]
+		classify := model.Classify
+		if int64(len(blob.Content)) < blob.Size {
+			classify = model.ClassifyPrefix
 		}
-		classification := model.Classify(blob.Path, content, config)
+		classification := classify(blob.Path, blob.Content, config)
 		if classification.Excluded || classification.Generated {
 			ignored[blob.Path] = true
 			continue

@@ -245,3 +245,41 @@ func TestPythonGeneratedMarkersRespectCarriageReturnLines(t *testing.T) {
 		}
 	}
 }
+
+func TestWildcardDirectoryPatternsPreserveBoundaries(t *testing.T) {
+	if Classify("source.go", nil, Config{Excludes: []string{"*/"}}).Excluded {
+		t.Fatal("directory wildcard matched a root file")
+	}
+	if !Classify("src/source.go", nil, Config{Excludes: []string{"*/"}}).Excluded {
+		t.Fatal("directory wildcard missed a child directory")
+	}
+	pattern := "./packages/*/generated/"
+	for file, want := range map[string]bool{"packages/a/generated/value.go": true, "packages/a/generated/deep/value.go": true, "packages/b/generated/value.go": true, "packages/a/generated_other/value.go": false, "packages/a/deep/generated/value.go": false, "packages/a/generated": false} {
+		excluded := Classify(file, nil, Config{Excludes: []string{pattern}}).Excluded
+		tests := Classify(file, nil, Config{TestGlobs: []string{pattern}}).Bucket == Tests
+		if excluded != want || tests != want {
+			t.Fatalf("%s: excluded=%t tests=%t want=%t", file, excluded, tests, want)
+		}
+	}
+	if !ExcludedDirectory("packages/a/generated", []string{pattern}) || !ExcludedDirectory("packages/a/generated/deep", []string{pattern}) || ExcludedDirectory("packages/a/generated_other", []string{pattern}) {
+		t.Fatal("directory pruning differs from file classification")
+	}
+}
+
+func TestBoundedGoGeneratedMarkersRequireCompleteDirectiveLines(t *testing.T) {
+	for _, source := range []string{"/* @generated */ package fixture;", "// license\n/* linguist-generated */ package fixture;", "// Code generated fixture. DO NOT EDIT.\n", "// Code generated fixture. DO NOT EDIT.\n  "} {
+		if !ClassifyPrefix("source.go", []byte(source), Config{}).Generated {
+			t.Fatalf("marker ignored: %q", source)
+		}
+	}
+	source := "// Code generated fixture. DO NOT EDIT."
+	if ClassifyPrefix("source.go", []byte(source), Config{}).Generated {
+		t.Fatal("truncated line classified generated")
+	}
+	if !Classify("source.go", []byte(source), Config{}).Generated {
+		t.Fatal("complete final directive line ignored")
+	}
+	if Classify("source.go", []byte(source+" \n"), Config{}).Generated {
+		t.Fatal("trailing whitespace accepted as canonical directive")
+	}
+}
