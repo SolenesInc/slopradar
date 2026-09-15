@@ -20,14 +20,14 @@ never fails a job on its numbers.
 - **Erosion** is the share of a repository's function mass that sits in
   functions over CC 10.
 - **A clone pair** is two ranges of at least 50 tokens and 5 lines whose tokens
-  are identical once comments are removed. **Clone share** is the share of
+  are identical after comment removal. **Clone share** is the share of
   source lines inside such ranges.
 
-Source and test code are reported as separate buckets. Erosion and clone share
-are ratios that only mean something against the same repository's own history,
-so the comment charts erosion by month instead of headlining a ratio. Lower is
-generally easier to maintain, but duplication is not always wrong, and absolute
-erosion varies by language. [How slopradar analyzes code](docs/analysis.md) has the
+The report keeps source and test code in separate buckets. Erosion and clone
+share are ratios, and a ratio only means something against the same
+repository's own history, which is what the trend is for. Lower is generally
+easier to maintain, but duplication is not always wrong, and absolute erosion
+varies by language. [How slopradar analyzes code](docs/analysis.md) has the
 exact rules for each language.
 
 The mass and erosion model comes from the
@@ -153,13 +153,13 @@ Cyclomatic complexity (CC) counts decision paths through a function. SLOC is its
 
 </details>
 
-The headline is where to look first: how much mass the pull request adds to
-and removes from functions over CC 10, and how many exact clone pairs it
-introduces and removes. The largest addition names the function to open. The
-bucket table splits the same numbers into source and tests. The details hold
-every function whose mass changed, with nested functions (↳) as drill-down
-rows outside the totals, then the clone pairs with their locations, then a
-short explainer.
+Start with the headline. It says how much mass the pull request adds to and
+removes from functions over CC 10, and how many exact clone pairs it introduces
+and removes. The largest addition names the function to open first. The bucket
+table splits the same numbers into source and tests. The details list every
+function whose mass changed, with nested functions (↳) as drill-down rows
+outside the totals, then the clone pairs with their locations, then a short
+explainer.
 
 With `trend-months`, the comment ends with a chart of erosion by month for
 each bucket, so a reviewer can see whether a pull request continues a direction
@@ -193,11 +193,11 @@ slopradar scan
 slopradar trend --months 12
 ```
 
-Each takes `--format text|md|json` (`text` by default; `md` is what the Action
-posts) and `--no-cache`. `scan` accepts a revision or a directory and defaults
-to `HEAD`. `diff` compares from the merge base of its two revisions. `trend`
-walks first-parent history and takes `--months`, one point per month at the
-repository's state at that month's end, or `--merges`.
+Each takes `--format text|md|json` and `--no-cache`. `text` is the default, and
+`md` is what the Action posts. `scan` accepts a revision or a directory and
+defaults to `HEAD`. `diff` compares from the merge base of its two revisions.
+`trend` walks first-parent history and takes `--months` or `--merges`. A monthly
+point is the repository at the end of its month.
 
 `slopradar diff` on the same pull request, as text:
 
@@ -231,8 +231,8 @@ source    348        8139.933  4003.492         0.492    6265          94       
 tests     291        9218.845  3909.661         0.424    6725          1258         0.187
 ```
 
-`--format json` carries the same data with unrounded values for scripts: the
-bucket totals, every function, and every clone pair.
+`--format json` carries the same data for scripts, with unrounded values for
+the bucket totals, every function, and every clone pair.
 
 ## Configuration
 
@@ -247,12 +247,12 @@ paths to the built-in classification:
 ```
 
 Patterns use Go's `path.Match` syntax, and a trailing slash matches a directory
-with everything under it. Out of the box, `vendor/`, `node_modules/`, `dist/`,
-`target/`, dot directories, and files with a generated-code marker are
-excluded, and each language's usual test file and directory names land in the
-tests bucket. [Source and test buckets](docs/analysis.md#source-and-test-buckets)
-lists the built-in rules, including how Rust `#[cfg(test)]` and module
-declarations are followed.
+with everything under it. Out of the box, slopradar skips `vendor/`,
+`node_modules/`, `dist/`, `target/`, dot directories, and files with a
+generated-code marker. Each language's usual test file and directory names go
+in the tests bucket. [Source and test buckets](docs/analysis.md#source-and-test-buckets)
+lists the built-in rules, including how slopradar follows Rust `#[cfg(test)]`
+and module declarations.
 
 ## Baselines
 
@@ -290,8 +290,8 @@ behind each value, and how to reproduce them.
   repository's own trend, not for comparing languages or unrelated projects.
 - Clone detection is exact-token matching. A near-duplicate with renamed
   identifiers is not a clone.
-- Files over 2 MiB are skipped and named in the report, unless a leading
-  generated-code marker excludes them. [Oversized files](docs/analysis.md#oversized-files)
+- slopradar skips files over 2 MiB and names them in the report, unless a
+  leading generated-code marker excludes them. [Oversized files](docs/analysis.md#oversized-files)
   has the limit and the measurement behind it.
 
 ## Development

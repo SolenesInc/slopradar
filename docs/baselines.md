@@ -34,19 +34,20 @@ erosion() {
 
 The production and prototype figures differ slightly because their parsers do
 not define identical rows. The shipped Go analyzer includes module-level
-closures and strips parsed comment spans; the prototype only walked declared
+closures and strips parsed comment spans. The prototype only walked declared
 functions and approximated comment removal line by line. The shipped
 TypeScript analyzer uses Oxc, while the prototype used the TypeScript compiler.
 The Vitest and other TypeScript receipt directories omit declaration files, as
 the prototype did. The attn TypeScript receipt also excludes its unmarked
-`app/src/types/generated.ts`; a default scan includes unmarked generated output.
+`app/src/types/generated.ts`. A default scan includes unmarked generated output.
 
 Test-directory conventions are language-specific. The production Go analyzer
 in `x/tools/go/analysis/passes/tests/tests.go` is included as source. TypeScript
 helpers in ordinary `tests/` directories are also source unless their filenames
 or configured globs classify them as tests. This affects one zod helper and
-nine Excalidraw helper or fixture files in these scopes; the corrected
-historical receipts are explained under [Run the measurements](#run-the-measurements).
+nine Excalidraw helper or fixture files in these scopes.
+[Run the measurements](#run-the-measurements) explains the corrected historical
+receipts.
 
 The Go analyzer uses the Go 1.27 standard parser and accepts generalized
 `new(expression)` and generic methods. The full standard-library scan completes
@@ -61,16 +62,16 @@ The table above is backed by the machine-readable
 binary checksum, corpus revisions, scope filters, warnings, skipped files, and
 unrounded results measured on September 14, 2026.
 
-This is a historical receipt. Reproduce it from the pinned revisions below;
-each parser or classification refresh records its new producer and measured
+This is a historical receipt. Reproduce it from the pinned revisions below.
+Each parser or classification refresh records its new producer and measured
 values. Earlier receipts remain in Git history at their recorded commits.
 
 ## Prerequisites
 
 Install Git, Go 1.27.1, `jq`, `rsync`, and a C compiler. The recorded binary was
-built with `go1.27.1 darwin/arm64`; its SHA-256 checksum is
+built with `go1.27.1 darwin/arm64`. Its SHA-256 checksum is
 `3700ed6588626be0bd4e8de394a79a6f4b1880c585843ea1699aac24a57f1df5`.
-Network access is required to fetch the pinned inputs.
+Fetching the pinned inputs needs network access.
 
 Start in an empty temporary directory:
 
@@ -82,7 +83,7 @@ go -C "$baseline_root/slopradar" build -o "$baseline_root/slopradar-bin" ./cmd/s
 ```
 
 Verify `go version` reports `go1.27.1` before continuing. OS, architecture,
-checkout path and build flags can change the binary checksum; the recorded
+checkout path and build flags can change the binary checksum. The recorded
 checksum identifies the measured executable. Those environment differences
 should not change the scan output.
 
@@ -198,14 +199,14 @@ standard-library and `net/http` scans have no parser warnings.
 
 Function counts use the same language filter as erosion. The historical
 standard-library receipt's 39,709 count accidentally included 75 JavaScript
-and 48 Python functions embedded under `$GOROOT/src`; its Go-only count was
+and 48 Python functions embedded under `$GOROOT/src`. Its Go-only count was
 39,586. The standard parser added `math/rand/v2.Rand.N`, giving 39,587.
 The final correction excludes 1,960 bodyless source declarations, giving 37,627
-implemented Go functions. The prototype also skips declarations without bodies;
+implemented Go functions. The prototype also skips declarations without bodies.
 gocyclo includes them. Every retained row has unchanged CC, SLOC and mass, and
 lexical clone input still includes declarations.
 
-The historical `x/tools` receipt also mixed languages in its metric: its
+The historical `x/tools` receipt also mixed languages in its metric. Its
 reported 0.7270964284200546 covered all 4,137 source functions. Applying its
 stated Go filter to the same historical binary yields 4,086 functions and
 0.7222621700849018. The current default classification includes the 18
@@ -217,12 +218,12 @@ then gives 4,103 Go functions and erosion 0.7210574492758908.
 The same classification correction makes zod's
 `packages/zod/src/v3/tests/Mocker.ts` and nine Excalidraw helper or fixture
 files under `packages/excalidraw/tests/` source. Their function metrics are
-unchanged. TypeScript defaults recognize `__tests__/`, `.test.*` and `.spec.*`;
-use explicit `test_globs` to classify additional helper directories. These
+unchanged. TypeScript defaults recognize `__tests__/`, `.test.*` and `.spec.*`.
+Use explicit `test_globs` to classify additional helper directories. These
 receipts retain the documented input configurations rather than changing
 them to force the historical rounded values.
 
 The same declaration correction removes 3 source functions from staticcheck,
-3 from `net/http`, and 20 from `os`; attn Go has none to remove. All TypeScript
+3 from `net/http`, and 20 from `os`. attn Go has none to remove. All TypeScript
 baseline values are unchanged. The JSON receipt records exact refreshed values
 and the prior producer for comparison.

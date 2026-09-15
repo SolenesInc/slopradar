@@ -9,9 +9,9 @@ archive checks.
 
 The module ships Oxc 0.149.0 native archives for Linux and macOS on arm64 and
 amd64, so building and installing slopradar needs neither Rust, Cargo, nor Node.
-Rebuilding those archives needs the pinned Rust 1.96.0 toolchain; the measured
-platform compatibility and the rebuild procedure are in
-[`internal/oxc/README.md`](../internal/oxc/README.md).
+Rebuilding those archives needs the pinned Rust 1.96.0 toolchain.
+[`internal/oxc/README.md`](../internal/oxc/README.md) has the measured platform
+compatibility and the rebuild procedure.
 
 ## Checks
 
@@ -47,7 +47,7 @@ Pull requests to this repository also get their own slopradar comment from
 ## Working agreement
 
 [`AGENTS.md`](../AGENTS.md) is the working agreement for every contributor,
-human or agent: automated tests are required and wait on real signals, every
-number in code or documentation carries the measurement or source behind it,
-code explains itself without prose comments, and identical input trees produce
+human or agent. Tests are required and wait on real signals. Every number in
+code or documentation carries the measurement or source behind it. Code
+explains itself without prose comments. Identical input trees produce
 identical output bytes.

@@ -32,8 +32,8 @@ jobs:
           comment: "true"
 ```
 
-The concurrency group serializes report runs per pull request; keep it when
-copying the workflow. `pull-requests: write` is what the comment needs.
+The concurrency group serializes report runs per pull request, so keep it when
+copying the workflow. The comment needs `pull-requests: write`.
 
 ## Inputs
 
@@ -45,9 +45,9 @@ copying the workflow. `pull-requests: write` is what the comment needs.
 
 ## What a run does
 
-The action resolves its own source path, builds the binary from the same
-checkout that supplied its scripts, so a moved ref or fork cannot mix code from
-two sources, and puts it on the job's `PATH`.
+The action builds the binary from the same checkout that supplied its scripts,
+so a moved ref or fork cannot mix code from two sources, and puts it on the
+job's `PATH`.
 
 It then fetches the base branch into `refs/remotes/origin/<base>`, unshallowing
 the checkout when `actions/checkout` produced a shallow clone, and runs:
@@ -58,9 +58,9 @@ slopradar diff --base refs/remotes/origin/<base> --head HEAD --format md [--tren
 
 `diff` compares from the merge base of the two revisions, so commits already on
 the base branch do not appear in the report. With `trend-months`, the report
-ends with a chart of erosion by month for each bucket, source and tests, at
-the repository's state at each month's end over the requested window, ending
-at the pull request head.
+ends with a chart of erosion by month for each bucket. Each point is the
+repository at the end of its month, and the last point is the pull request
+head.
 
 ## The comment
 
@@ -73,7 +73,7 @@ push cannot overwrite a newer report with an older one.
 On a fork pull request, or a
 [Dependabot pull request whose token is read-only](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-on-actions#restrictions-when-dependabot-triggers-events),
 the action keeps the summary and says in the job log that it skipped the
-comment. Other API failures stay visible as step failures.
+comment. Other API failures stay visible.
 
 ## Large reports
 
@@ -87,15 +87,15 @@ short linked notice.
 If a report exceeds GitHub's
 [1 MiB job-summary capacity](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#step-isolation-and-limits),
 the action uploads the untouched Markdown as an artifact and posts a compact
-linked summary. It never cuts through a table or code fence; the exact edges
-are covered by the [boundary tests](../scripts/report-bounds.test.cjs).
+linked summary. It never cuts through a table or code fence. The
+[boundary tests](../scripts/report-bounds.test.cjs) cover the exact edges.
 
 ## Pinning
 
 `SolenesInc/slopradar@v0.1.0` selects a release. A tag can be moved, so a
-workflow that must run the same analyzer every time names the full commit SHA
-instead, as in `SolenesInc/slopradar@<sha>`. `SolenesInc/slopradar@main`
-follows the repository, so report changes land on the next run without a
-workflow edit. Either way the action builds from the selected checkout; the
-standalone `go install` command in the [README](../README.md#command-line) is
-versioned separately.
+workflow that must run the same analyzer every time names the full commit SHA,
+as in `SolenesInc/slopradar@<sha>`. `SolenesInc/slopradar@main` follows the
+repository, so report changes land on the next run without a workflow edit.
+The action builds from whichever checkout the ref selects. The standalone
+`go install` command in the [README](../README.md#command-line) is versioned
+separately.
