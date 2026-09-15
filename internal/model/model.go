@@ -108,9 +108,10 @@ type Diff struct {
 }
 
 type TrendPoint struct {
-	Rev     string            `json:"rev"`
-	Date    string            `json:"date"`
-	Buckets map[Bucket]Totals `json:"buckets"`
+	Rev       string            `json:"rev"`
+	Date      string            `json:"date"`
+	Buckets   map[Bucket]Totals `json:"buckets"`
+	AxisLabel string            `json:"-"`
 }
 
 func NewFunction(file, name string, line, cc, sloc int, nested []Function) Function {

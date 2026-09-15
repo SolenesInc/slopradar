@@ -813,7 +813,7 @@ func TestTrendCommandRendersMonthlySnapshotsInJSONAndText(t *testing.T) {
 	if err := json.Unmarshal(jsonOutput.Bytes(), &points); err != nil {
 		t.Fatal(err)
 	}
-	if len(points) != 3 || points[len(points)-1].Rev != head || points[1].Buckets[model.Source].Erosion != 1 {
+	if len(points) != 2 || points[0].Buckets[model.Source].Functions != 1 || points[1].Rev != head || points[1].Buckets[model.Source].Functions != 2 {
 		t.Fatalf("trend points = %#v", points)
 	}
 	var textOutput bytes.Buffer

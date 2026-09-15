@@ -13,7 +13,7 @@ import (
 	"github.com/SolenesInc/slopradar/internal/model"
 )
 
-func TestMonthsSelectsFirstCommitAtBoundariesAndCurrentHead(t *testing.T) {
+func TestMonthsSelectsMonthEndCommitsAndCurrentHead(t *testing.T) {
 	dir := t.TempDir()
 	git(t, dir, "init", "-b", "main")
 	git(t, dir, "config", "user.name", "Slopradar Test")
@@ -24,6 +24,8 @@ func TestMonthsSelectsFirstCommitAtBoundariesAndCurrentHead(t *testing.T) {
 	}{
 		{"2026-01-10T12:00:00Z", "jan"},
 		{"2026-01-20T12:00:00Z", "jan-late"},
+		{"2026-01-20T12:00:00Z", "jan-tied"},
+		{"2026-01-15T12:00:00Z", "jan-newest"},
 		{"2026-02-05T12:00:00Z", "feb"},
 		{"2026-03-05T12:00:00Z", "mar"},
 		{"2026-03-20T12:00:00Z", "head"},
@@ -49,9 +51,30 @@ func TestMonthsSelectsFirstCommitAtBoundariesAndCurrentHead(t *testing.T) {
 	for i := range got {
 		gotRevs[i] = got[i].Rev
 	}
-	want := []string{revs["jan"], revs["feb"], revs["mar"], revs["head"]}
+	want := []string{revs["jan-newest"], revs["feb"], revs["head"]}
 	if !reflect.DeepEqual(gotRevs, want) {
 		t.Fatalf("monthly revisions = %#v, want %#v", gotRevs, want)
+	}
+	if got[len(got)-1].AxisLabel != "head" {
+		t.Fatalf("last monthly revision label = %q, want head", got[len(got)-1].AxisLabel)
+	}
+	points, err := Build(context.Background(), got, func(_ context.Context, rev string) (model.Snapshot, error) {
+		functions := 1
+		sourceLines := 1
+		if rev == revs["jan-newest"] {
+			functions = 0
+			sourceLines = 0
+		}
+		return model.Snapshot{Buckets: map[model.Bucket]model.Totals{
+			model.Source: {Functions: functions, SourceLines: sourceLines},
+			model.Tests:  {},
+		}}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(points) != 2 || points[0].Rev != revs["feb"] || points[0].AxisLabel != "2026-02" || points[1].Rev != revs["head"] || points[1].AxisLabel != "head" {
+		t.Fatalf("trend points = %#v", points)
 	}
 	all, err := Months(context.Background(), repository, "HEAD", int(^uint(0)>>1))
 	if err != nil {
@@ -100,11 +123,11 @@ func TestMergesReturnsRequestedFirstParentMergesInTrendOrder(t *testing.T) {
 }
 
 func TestBuildKeepsCommitIdentitiesAndTotalsForIdenticalTrees(t *testing.T) {
-	commits := []gitread.Commit{{Rev: "one", Date: "2026-01-01T00:00:00Z"}, {Rev: "two", Date: "2026-02-01T00:00:00Z"}}
+	commits := []Commit{{Commit: gitread.Commit{Rev: "one", Date: "2026-01-01T00:00:00Z"}}, {Commit: gitread.Commit{Rev: "two", Date: "2026-02-01T00:00:00Z"}}}
 	got, err := Build(context.Background(), commits, func(_ context.Context, rev string) (model.Snapshot, error) {
 		return model.Snapshot{
 			Rev: "shared-tree", Functions: []model.Function{{Name: "discarded"}},
-			Buckets: map[model.Bucket]model.Totals{model.Source: {Erosion: 0.25}, model.Tests: {CloneShare: 0.5}},
+			Buckets: map[model.Bucket]model.Totals{model.Source: {Functions: 1, Erosion: 0.25, SourceLines: 1}, model.Tests: {CloneShare: 0.5}},
 		}, nil
 	})
 	if err != nil {
@@ -115,8 +138,28 @@ func TestBuildKeepsCommitIdentitiesAndTotalsForIdenticalTrees(t *testing.T) {
 	}
 }
 
+func TestBuildKeepsLeadingCloneOnlyPoint(t *testing.T) {
+	commits := []Commit{
+		{Commit: gitread.Commit{Rev: "clone-only", Date: "2026-01-31T00:00:00Z"}},
+		{Commit: gitread.Commit{Rev: "functions", Date: "2026-02-28T00:00:00Z"}},
+	}
+	points, err := Build(context.Background(), commits, func(_ context.Context, rev string) (model.Snapshot, error) {
+		totals := model.Totals{Functions: 1, SourceLines: 20}
+		if rev == "clone-only" {
+			totals = model.Totals{SourceLines: 10, CloneLines: 8, CloneShare: 0.8}
+		}
+		return model.Snapshot{Buckets: map[model.Bucket]model.Totals{model.Source: totals, model.Tests: {}}}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(points) != 2 || points[0].Rev != "clone-only" || points[0].Buckets[model.Source].CloneShare != 0.8 {
+		t.Fatalf("points = %#v", points)
+	}
+}
+
 func TestBuildRejectsWarningSnapshotAndPreservesDiagnostic(t *testing.T) {
-	commits := []gitread.Commit{{Rev: "requested", Date: "2026-01-01T00:00:00Z"}}
+	commits := []Commit{{Commit: gitread.Commit{Rev: "requested", Date: "2026-01-01T00:00:00Z"}}}
 	points, err := Build(context.Background(), commits, func(_ context.Context, _ string) (model.Snapshot, error) {
 		return model.Snapshot{Rev: "resolved", Warnings: []string{"parse source.go: invalid Go syntax; analyzed recoverable syntax"}}, nil
 	})
