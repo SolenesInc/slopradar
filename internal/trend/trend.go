@@ -45,8 +45,9 @@ func Months(ctx context.Context, repository *gitread.Repository, head string, co
 		return []Commit{}, nil
 	}
 	type datedCommit struct {
-		commit gitread.Commit
-		date   time.Time
+		commit           gitread.Commit
+		date             time.Time
+		firstParentOrder int
 	}
 	dated := make([]datedCommit, len(commits))
 	for i, commit := range commits {
@@ -54,13 +55,13 @@ func Months(ctx context.Context, repository *gitread.Repository, head string, co
 		if err != nil {
 			return nil, fmt.Errorf("parse commit date %q for %s: %w", commit.Date, commit.Rev, err)
 		}
-		dated[i] = datedCommit{commit: commit, date: date}
+		dated[i] = datedCommit{commit: commit, date: date, firstParentOrder: i}
 	}
 	sort.Slice(dated, func(i, j int) bool {
 		if !dated[i].date.Equal(dated[j].date) {
 			return dated[i].date.Before(dated[j].date)
 		}
-		return dated[i].commit.Rev < dated[j].commit.Rev
+		return dated[i].firstParentOrder > dated[j].firstParentOrder
 	})
 	headCommit := commits[0]
 	headDate, err := time.Parse(time.RFC3339, headCommit.Date)

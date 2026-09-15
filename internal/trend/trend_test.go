@@ -24,6 +24,7 @@ func TestMonthsSelectsMonthEndCommitsAndCurrentHead(t *testing.T) {
 	}{
 		{"2026-01-10T12:00:00Z", "jan"},
 		{"2026-01-20T12:00:00Z", "jan-late"},
+		{"2026-01-20T12:00:00Z", "jan-newest"},
 		{"2026-02-05T12:00:00Z", "feb"},
 		{"2026-03-05T12:00:00Z", "mar"},
 		{"2026-03-20T12:00:00Z", "head"},
@@ -49,7 +50,7 @@ func TestMonthsSelectsMonthEndCommitsAndCurrentHead(t *testing.T) {
 	for i := range got {
 		gotRevs[i] = got[i].Rev
 	}
-	want := []string{revs["jan-late"], revs["feb"], revs["head"]}
+	want := []string{revs["jan-newest"], revs["feb"], revs["head"]}
 	if !reflect.DeepEqual(gotRevs, want) {
 		t.Fatalf("monthly revisions = %#v, want %#v", gotRevs, want)
 	}
@@ -58,7 +59,7 @@ func TestMonthsSelectsMonthEndCommitsAndCurrentHead(t *testing.T) {
 	}
 	points, err := Build(context.Background(), got, func(_ context.Context, rev string) (model.Snapshot, error) {
 		functions := 1
-		if rev == revs["jan-late"] {
+		if rev == revs["jan-newest"] {
 			functions = 0
 		}
 		return model.Snapshot{Buckets: map[model.Bucket]model.Totals{
