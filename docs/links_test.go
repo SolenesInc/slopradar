@@ -2,28 +2,34 @@ package docs
 
 import (
 	"os"
+	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
 	"unicode"
 )
 
+const commonMarkATXHeadingLevels = 6
+
 var (
 	linkPattern    = regexp.MustCompile(`\]\(([^)\s]+)\)`)
-	headingPattern = regexp.MustCompile(`^#{1,6}\s+(.+?)\s*$`)
+	headingPattern = regexp.MustCompile(`^#{1,` + strconv.Itoa(commonMarkATXHeadingLevels) + `}\s+(.+?)\s*$`)
 )
 
 func TestMarkdownLinksAndAnchorsResolve(t *testing.T) {
 	root := filepath.Join("..")
-	documents := markdownDocuments(t, root)
+	tracked := trackedFiles(t, root)
+	documents := markdownDocuments(tracked)
 	if len(documents) < 2 {
 		t.Fatalf("expected the README and the docs, found %v", documents)
 	}
 	checked := 0
 	for _, document := range documents {
-		for _, link := range links(t, document) {
+		for _, link := range links(t, root, document) {
 			target, anchor, _ := strings.Cut(link.target, "#")
 			if strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") || strings.HasPrefix(target, "mailto:") {
 				continue
@@ -31,10 +37,10 @@ func TestMarkdownLinksAndAnchorsResolve(t *testing.T) {
 			checked++
 			resolved := document
 			if target != "" {
-				resolved = filepath.Join(filepath.Dir(document), filepath.FromSlash(target))
+				resolved = path.Join(path.Dir(document), target)
 			}
-			if _, err := os.Stat(resolved); err != nil {
-				t.Errorf("%s:%d links to %s: %v", document, link.line, link.target, err)
+			if _, ok := tracked[resolved]; !ok {
+				t.Errorf("%s:%d links to %s, and %s is not a Git-tracked file", document, link.line, link.target, resolved)
 				continue
 			}
 			if anchor == "" {
@@ -44,7 +50,7 @@ func TestMarkdownLinksAndAnchorsResolve(t *testing.T) {
 				t.Errorf("%s:%d links to anchor %q in a non-Markdown file", document, link.line, link.target)
 				continue
 			}
-			if _, ok := anchors(t, resolved)[anchor]; !ok {
+			if _, ok := anchors(t, root, resolved)[anchor]; !ok {
 				t.Errorf("%s:%d links to %s but %s has no heading with that anchor", document, link.line, link.target, resolved)
 			}
 		}
@@ -54,28 +60,27 @@ func TestMarkdownLinksAndAnchorsResolve(t *testing.T) {
 	}
 }
 
-func markdownDocuments(t *testing.T, root string) []string {
+func trackedFiles(t *testing.T, root string) map[string]struct{} {
 	t.Helper()
-	var documents []string
-	err := filepath.WalkDir(root, func(p string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			switch entry.Name() {
-			case ".git", "node_modules", "target", "testdata", "vendor":
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if strings.HasSuffix(entry.Name(), ".md") {
-			documents = append(documents, p)
-		}
-		return nil
-	})
+	listing, err := exec.Command("git", "-C", root, "ls-files", "-z").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
+	tracked := map[string]struct{}{}
+	for _, file := range strings.Split(strings.TrimSuffix(string(listing), "\x00"), "\x00") {
+		tracked[file] = struct{}{}
+	}
+	return tracked
+}
+
+func markdownDocuments(tracked map[string]struct{}) []string {
+	var documents []string
+	for file := range tracked {
+		if strings.HasSuffix(file, ".md") && !strings.Contains(file, "testdata/") {
+			documents = append(documents, file)
+		}
+	}
+	sort.Strings(documents)
 	return documents
 }
 
@@ -84,11 +89,11 @@ type link struct {
 	target string
 }
 
-func links(t *testing.T, document string) []link {
+func links(t *testing.T, root, document string) []link {
 	t.Helper()
 	var found []link
 	inFence := false
-	for number, text := range lines(t, document) {
+	for number, text := range lines(t, root, document) {
 		if strings.HasPrefix(strings.TrimSpace(text), "```") {
 			inFence = !inFence
 			continue
@@ -103,12 +108,12 @@ func links(t *testing.T, document string) []link {
 	return found
 }
 
-func anchors(t *testing.T, document string) map[string]struct{} {
+func anchors(t *testing.T, root, document string) map[string]struct{} {
 	t.Helper()
 	seen := map[string]int{}
 	result := map[string]struct{}{}
 	inFence := false
-	for _, text := range lines(t, document) {
+	for _, text := range lines(t, root, document) {
 		if strings.HasPrefix(strings.TrimSpace(text), "```") {
 			inFence = !inFence
 			continue
@@ -144,9 +149,9 @@ func headingAnchor(heading string) string {
 	return b.String()
 }
 
-func lines(t *testing.T, document string) []string {
+func lines(t *testing.T, root, document string) []string {
 	t.Helper()
-	content, err := os.ReadFile(document)
+	content, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(document)))
 	if err != nil {
 		t.Fatal(err)
 	}
