@@ -1,20 +1,77 @@
-# Baseline reproduction
+# Baselines
 
-The README's v0.1.0 baseline table is backed by the machine-readable
+These are source-bucket erosion measurements of well-known Go and TypeScript
+code bases, for a sense of scale. They were made with the CLI producer recorded
+in the [baseline receipt](baselines-v0.1.0.json), using Go `1.27.1` and
+`--no-cache`. Each row is restricted to the stated language and path because
+erosion is language-bound. The prototype value is the expectation recorded
+before the production parsers were integrated.
+
+Each `$BASELINES` subdirectory is a clean copy of only the paths named in its
+row at the pinned revision. As in the prototypes, the TypeScript copies omit
+declaration files, and the attn copy explicitly excludes its unmarked generated
+file. For the commands below, `erosion '\.go$'` and `erosion '\.(ts|tsx)$'`
+mean:
+
+```sh
+erosion() {
+  jq --arg files "$1" '[.functions[] | select(.bucket == "source" and (.file | test($files)))] as $f | (($f | map(select(.cc > 10) | .mass) | add) / ($f | map(.mass) | add))'
+}
+```
+
+| Corpus | Pinned revision | Shipped | Prototype | Command |
+| --- | --- | ---: | ---: | --- |
+| Go standard library | `go1.27.1`, `$GOROOT/src` | 0.742 | 0.743 | `slopradar scan --no-cache --format json "$GOROOT/src" \| erosion '\.go$'` |
+| `golang.org/x/tools` | `v0.49.0` | 0.721 | 0.722 | `slopradar scan --no-cache --format json "$BASELINES/tools" \| erosion '\.go$'` |
+| `honnef.co/go/tools` (staticcheck) | `v0.8.1` | 0.748 | 0.749 | `slopradar scan --no-cache --format json "$BASELINES/staticcheck" \| erosion '\.go$'` |
+| `net/http` | `go1.27.1`, `$GOROOT/src/net/http` | 0.588 | 0.589 | `slopradar scan --no-cache --format json "$GOROOT/src/net/http" \| erosion '\.go$'` |
+| `os` | `go1.27.1`, `$GOROOT/src/os` | 0.476 | 0.477 | `slopradar scan --no-cache --format json "$GOROOT/src/os" \| erosion '\.go$'` |
+| attn Go, `cmd` and `internal` | `e05560650af06855452a9793a4f987ded9ca1d99` | 0.593 | 0.593 | `slopradar scan --no-cache --format json "$BASELINES/attn-go" \| erosion '\.go$'` |
+| zod, `packages/zod/src` | `46da95720b7293f156ad9c683c14bd8ab9664c2f` | 0.804 | 0.805 | `slopradar scan --no-cache --format json "$BASELINES/zod" \| erosion '\.(ts\|tsx)$'` |
+| vitest, `packages/*` | `2ce29d5fa758046e5453bd92b8ed6c9da9709bb5` | 0.652 | 0.652 | `slopradar scan --no-cache --format json "$BASELINES/vitest" \| erosion '\.(ts\|tsx)$'` |
+| excalidraw, `packages` and `excalidraw-app` | `afa3a653fc5d2b742adcbd5a6063187b056d2419` | 0.795 | 0.796 | `slopradar scan --no-cache --format json "$BASELINES/excalidraw" \| erosion '\.(ts\|tsx)$'` |
+| attn TypeScript, `app/src`, `app/lint`, `sdk`, and `plugins` | `e05560650af06855452a9793a4f987ded9ca1d99` | 0.912 | 0.912 | `slopradar scan --no-cache --format json "$BASELINES/attn-ts" \| erosion '\.(ts\|tsx)$'` |
+
+The production and prototype figures differ slightly because their parsers do
+not define identical rows. The shipped Go analyzer includes module-level
+closures and strips parsed comment spans. The prototype only walked declared
+functions and approximated comment removal line by line. The shipped
+TypeScript analyzer uses Oxc, while the prototype used the TypeScript compiler.
+The Vitest and other TypeScript receipt directories omit declaration files, as
+the prototype did. The attn TypeScript receipt also excludes its unmarked
+`app/src/types/generated.ts`. A default scan includes unmarked generated output.
+
+Test-directory conventions are language-specific. The production Go analyzer
+in `x/tools/go/analysis/passes/tests/tests.go` is included as source. TypeScript
+helpers in ordinary `tests/` directories are also source unless their filenames
+or configured globs classify them as tests. This affects one zod helper and
+nine Excalidraw helper or fixture files in these scopes.
+[Run the measurements](#run-the-measurements) explains the corrected historical
+receipts.
+
+The Go analyzer uses the Go 1.27 standard parser and accepts generalized
+`new(expression)` and generic methods. The full standard-library scan completes
+without warnings or incomplete-file skips. Generated files, including oversized
+`cmd/compile/internal/ssa/opGen.go` and `cmd/compile/internal/ssa/rewriteAMD64.go`,
+are excluded by their leading markers.
+
+## Reproducing the receipt
+
+The table above is backed by the machine-readable
 [baseline receipt](baselines-v0.1.0.json). It records the exact tool commit,
 binary checksum, corpus revisions, scope filters, warnings, skipped files, and
 unrounded results measured on September 14, 2026.
 
-This is a historical receipt. Reproduce it from the pinned revisions below;
-each parser or classification refresh records its new producer and measured
+This is a historical receipt. Reproduce it from the pinned revisions below.
+Each parser or classification refresh records its new producer and measured
 values. Earlier receipts remain in Git history at their recorded commits.
 
 ## Prerequisites
 
 Install Git, Go 1.27.1, `jq`, `rsync`, and a C compiler. The recorded binary was
-built with `go1.27.1 darwin/arm64`; its SHA-256 checksum is
+built with `go1.27.1 darwin/arm64`. Its SHA-256 checksum is
 `3700ed6588626be0bd4e8de394a79a6f4b1880c585843ea1699aac24a57f1df5`.
-Network access is required to fetch the pinned inputs.
+Fetching the pinned inputs needs network access.
 
 Start in an empty temporary directory:
 
@@ -26,7 +83,7 @@ go -C "$baseline_root/slopradar" build -o "$baseline_root/slopradar-bin" ./cmd/s
 ```
 
 Verify `go version` reports `go1.27.1` before continuing. OS, architecture,
-checkout path and build flags can change the binary checksum; the recorded
+checkout path and build flags can change the binary checksum. The recorded
 checksum identifies the measured executable. Those environment differences
 should not change the scan output.
 
@@ -113,7 +170,7 @@ rules used by the receipt:
 ## Run the measurements
 
 Define the receipt metric once. Its argument is the language-extension regular
-expression shown in every README command:
+expression shown in every command of the baseline table:
 
 ```sh
 erosion() {
@@ -142,14 +199,14 @@ standard-library and `net/http` scans have no parser warnings.
 
 Function counts use the same language filter as erosion. The historical
 standard-library receipt's 39,709 count accidentally included 75 JavaScript
-and 48 Python functions embedded under `$GOROOT/src`; its Go-only count was
+and 48 Python functions embedded under `$GOROOT/src`. Its Go-only count was
 39,586. The standard parser added `math/rand/v2.Rand.N`, giving 39,587.
 The final correction excludes 1,960 bodyless source declarations, giving 37,627
-implemented Go functions. The prototype also skips declarations without bodies;
+implemented Go functions. The prototype also skips declarations without bodies.
 gocyclo includes them. Every retained row has unchanged CC, SLOC and mass, and
 lexical clone input still includes declarations.
 
-The historical `x/tools` receipt also mixed languages in its metric: its
+The historical `x/tools` receipt also mixed languages in its metric. Its
 reported 0.7270964284200546 covered all 4,137 source functions. Applying its
 stated Go filter to the same historical binary yields 4,086 functions and
 0.7222621700849018. The current default classification includes the 18
@@ -161,12 +218,12 @@ then gives 4,103 Go functions and erosion 0.7210574492758908.
 The same classification correction makes zod's
 `packages/zod/src/v3/tests/Mocker.ts` and nine Excalidraw helper or fixture
 files under `packages/excalidraw/tests/` source. Their function metrics are
-unchanged. TypeScript defaults recognize `__tests__/`, `.test.*` and `.spec.*`;
-use explicit `test_globs` to classify additional helper directories. These
+unchanged. TypeScript defaults recognize `__tests__/`, `.test.*` and `.spec.*`.
+Use explicit `test_globs` to classify additional helper directories. These
 receipts retain the documented input configurations rather than changing
 them to force the historical rounded values.
 
 The same declaration correction removes 3 source functions from staticcheck,
-3 from `net/http`, and 20 from `os`; attn Go has none to remove. All TypeScript
+3 from `net/http`, and 20 from `os`. attn Go has none to remove. All TypeScript
 baseline values are unchanged. The JSON receipt records exact refreshed values
 and the prior producer for comparison.
