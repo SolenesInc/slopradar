@@ -259,6 +259,14 @@ func writeExplainer(w *markdownWriter) {
 	w.line("</details>")
 }
 
+const (
+	mermaidDefaultChartWidth  = 700
+	mermaidDefaultChartHeight = 500
+	chartScalePercent         = 60
+	chartWidth                = mermaidDefaultChartWidth * chartScalePercent / 100
+	chartHeight               = mermaidDefaultChartHeight * chartScalePercent / 100
+)
+
 func writeChart(w *markdownWriter, points []model.TrendPoint) {
 	labels := make([]string, len(points))
 	for i, point := range points {
@@ -278,6 +286,7 @@ func writeChart(w *markdownWriter, points []model.TrendPoint) {
 			w.line("")
 		}
 		w.line("```mermaid")
+		w.line("%%%%{init: {\"xyChart\": {\"width\": %d, \"height\": %d}}}%%%%", chartWidth, chartHeight)
 		w.line("xychart-beta")
 		w.line("    title \"%s erosion by month\"", strings.ToUpper(string(bucket[:1]))+string(bucket[1:]))
 		w.line("    x-axis [%s]", strings.Join(labels, ", "))
