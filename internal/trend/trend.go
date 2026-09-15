@@ -103,7 +103,7 @@ func Months(ctx context.Context, repository *gitread.Repository, head string, co
 
 func Build(ctx context.Context, commits []Commit, scan Scanner) ([]model.TrendPoint, error) {
 	points := make([]model.TrendPoint, 0, len(commits))
-	foundFunctions := false
+	foundSource := false
 	for _, commit := range commits {
 		snapshot, err := scan(ctx, commit.Rev)
 		if err != nil {
@@ -116,8 +116,8 @@ func Build(ctx context.Context, commits []Commit, scan Scanner) ([]model.TrendPo
 			model.Source: snapshot.Buckets[model.Source],
 			model.Tests:  snapshot.Buckets[model.Tests],
 		}
-		foundFunctions = foundFunctions || buckets[model.Source].Functions != 0 || buckets[model.Tests].Functions != 0
-		if foundFunctions {
+		foundSource = foundSource || buckets[model.Source].SourceLines != 0 || buckets[model.Tests].SourceLines != 0
+		if foundSource {
 			points = append(points, model.TrendPoint{Rev: commit.Rev, Date: commit.Date, Buckets: buckets, AxisLabel: commit.AxisLabel})
 		}
 	}

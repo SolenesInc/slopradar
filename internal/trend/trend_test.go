@@ -59,11 +59,13 @@ func TestMonthsSelectsMonthEndCommitsAndCurrentHead(t *testing.T) {
 	}
 	points, err := Build(context.Background(), got, func(_ context.Context, rev string) (model.Snapshot, error) {
 		functions := 1
+		sourceLines := 1
 		if rev == revs["jan-newest"] {
 			functions = 0
+			sourceLines = 0
 		}
 		return model.Snapshot{Buckets: map[model.Bucket]model.Totals{
-			model.Source: {Functions: functions},
+			model.Source: {Functions: functions, SourceLines: sourceLines},
 			model.Tests:  {},
 		}}, nil
 	})
@@ -124,7 +126,7 @@ func TestBuildKeepsCommitIdentitiesAndTotalsForIdenticalTrees(t *testing.T) {
 	got, err := Build(context.Background(), commits, func(_ context.Context, rev string) (model.Snapshot, error) {
 		return model.Snapshot{
 			Rev: "shared-tree", Functions: []model.Function{{Name: "discarded"}},
-			Buckets: map[model.Bucket]model.Totals{model.Source: {Functions: 1, Erosion: 0.25}, model.Tests: {CloneShare: 0.5}},
+			Buckets: map[model.Bucket]model.Totals{model.Source: {Functions: 1, Erosion: 0.25, SourceLines: 1}, model.Tests: {CloneShare: 0.5}},
 		}, nil
 	})
 	if err != nil {
@@ -132,6 +134,26 @@ func TestBuildKeepsCommitIdentitiesAndTotalsForIdenticalTrees(t *testing.T) {
 	}
 	if len(got) != 2 || got[0].Rev != "one" || got[1].Rev != "two" || got[1].Date != commits[1].Date || got[0].Buckets[model.Source].Erosion != 0.25 || got[0].Buckets[model.Tests].CloneShare != 0.5 {
 		t.Fatalf("points = %#v", got)
+	}
+}
+
+func TestBuildKeepsLeadingCloneOnlyPoint(t *testing.T) {
+	commits := []Commit{
+		{Commit: gitread.Commit{Rev: "clone-only", Date: "2026-01-31T00:00:00Z"}},
+		{Commit: gitread.Commit{Rev: "functions", Date: "2026-02-28T00:00:00Z"}},
+	}
+	points, err := Build(context.Background(), commits, func(_ context.Context, rev string) (model.Snapshot, error) {
+		totals := model.Totals{Functions: 1, SourceLines: 20}
+		if rev == "clone-only" {
+			totals = model.Totals{SourceLines: 10, CloneLines: 8, CloneShare: 0.8}
+		}
+		return model.Snapshot{Buckets: map[model.Bucket]model.Totals{model.Source: totals, model.Tests: {}}}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(points) != 2 || points[0].Rev != "clone-only" || points[0].Buckets[model.Source].CloneShare != 0.8 {
+		t.Fatalf("points = %#v", points)
 	}
 }
 
