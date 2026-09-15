@@ -271,7 +271,9 @@ func writeChart(w *markdownWriter, points []model.TrendPoint) {
 	labels := make([]string, len(points))
 	for i, point := range points {
 		date := safeText(point.Date)
-		if parsed, err := time.Parse(time.RFC3339, point.Date); err == nil {
+		if point.AxisLabel != "" {
+			date = point.AxisLabel
+		} else if parsed, err := time.Parse(time.RFC3339, point.Date); err == nil {
 			date = parsed.Format("2006-01")
 		}
 		labels[i] = fmt.Sprintf("\"%s\"", strings.ReplaceAll(date, "\"", "\\\""))

@@ -116,7 +116,8 @@ slopradar trend (--merges <count> | --months <count>) [--format text|md|json] [-
 
 `scan` defaults to `HEAD`. A directory target reads the working tree; a revision
 target reads Git objects without checking them out. `diff` resolves its base to
-the merge base of `--base` and `--head`. `trend` walks first-parent history.
+the merge base of `--base` and `--head`. `trend` walks first-parent history,
+with monthly points representing the repository's state at each month end.
 
 Revision scans report the Git tree ID in `rev`, so commits with identical trees
 produce identical output. Directory scans use `directory`. Diff `base` and `head`

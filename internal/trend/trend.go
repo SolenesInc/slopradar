@@ -12,7 +12,12 @@ import (
 
 type Scanner func(context.Context, string) (model.Snapshot, error)
 
-func Merges(ctx context.Context, repository *gitread.Repository, head string, count int) ([]gitread.Commit, error) {
+type Commit struct {
+	gitread.Commit
+	AxisLabel string
+}
+
+func Merges(ctx context.Context, repository *gitread.Repository, head string, count int) ([]Commit, error) {
 	if count <= 0 {
 		return nil, fmt.Errorf("merges must be greater than zero, got %d", count)
 	}
@@ -21,10 +26,14 @@ func Merges(ctx context.Context, repository *gitread.Repository, head string, co
 		return nil, err
 	}
 	reverse(commits)
-	return commits, nil
+	selected := make([]Commit, len(commits))
+	for i, commit := range commits {
+		selected[i] = Commit{Commit: commit}
+	}
+	return selected, nil
 }
 
-func Months(ctx context.Context, repository *gitread.Repository, head string, count int) ([]gitread.Commit, error) {
+func Months(ctx context.Context, repository *gitread.Repository, head string, count int) ([]Commit, error) {
 	if count <= 0 {
 		return nil, fmt.Errorf("months must be greater than zero, got %d", count)
 	}
@@ -33,7 +42,7 @@ func Months(ctx context.Context, repository *gitread.Repository, head string, co
 		return nil, err
 	}
 	if len(commits) == 0 {
-		return []gitread.Commit{}, nil
+		return []Commit{}, nil
 	}
 	type datedCommit struct {
 		commit gitread.Commit
@@ -64,28 +73,36 @@ func Months(ctx context.Context, repository *gitread.Repository, head string, co
 	availableMonths = max(availableMonths, 1)
 	boundaryCount := min(count, availableMonths)
 	firstBoundary := currentBoundary.AddDate(0, -(boundaryCount - 1), 0)
-	selected := make([]gitread.Commit, 0, boundaryCount+1)
-	seen := map[string]struct{}{}
+	selected := make([]Commit, 0, boundaryCount)
+	seen := map[string]int{}
 	for boundary := firstBoundary; !boundary.After(currentBoundary); boundary = boundary.AddDate(0, 1, 0) {
-		for _, item := range dated {
-			if item.date.Before(boundary) {
+		nextBoundary := boundary.AddDate(0, 1, 0)
+		for i := len(dated) - 1; i >= 0; i-- {
+			item := dated[i]
+			if !item.date.Before(nextBoundary) {
 				continue
 			}
 			if _, ok := seen[item.commit.Rev]; !ok {
-				selected = append(selected, item.commit)
-				seen[item.commit.Rev] = struct{}{}
+				seen[item.commit.Rev] = len(selected)
+				selected = append(selected, Commit{Commit: item.commit, AxisLabel: boundary.Format("2006-01")})
 			}
 			break
 		}
 	}
-	if _, ok := seen[headCommit.Rev]; !ok {
-		selected = append(selected, headCommit)
+	headIndex, ok := seen[headCommit.Rev]
+	if !ok {
+		headIndex = len(selected)
+		selected = append(selected, Commit{Commit: headCommit})
+	}
+	if !headDate.UTC().Equal(currentBoundary) {
+		selected[headIndex].AxisLabel = "head"
 	}
 	return selected, nil
 }
 
-func Build(ctx context.Context, commits []gitread.Commit, scan Scanner) ([]model.TrendPoint, error) {
+func Build(ctx context.Context, commits []Commit, scan Scanner) ([]model.TrendPoint, error) {
 	points := make([]model.TrendPoint, 0, len(commits))
+	foundFunctions := false
 	for _, commit := range commits {
 		snapshot, err := scan(ctx, commit.Rev)
 		if err != nil {
@@ -98,7 +115,10 @@ func Build(ctx context.Context, commits []gitread.Commit, scan Scanner) ([]model
 			model.Source: snapshot.Buckets[model.Source],
 			model.Tests:  snapshot.Buckets[model.Tests],
 		}
-		points = append(points, model.TrendPoint{Rev: commit.Rev, Date: commit.Date, Buckets: buckets})
+		foundFunctions = foundFunctions || buckets[model.Source].Functions != 0 || buckets[model.Tests].Functions != 0
+		if foundFunctions {
+			points = append(points, model.TrendPoint{Rev: commit.Rev, Date: commit.Date, Buckets: buckets, AxisLabel: commit.AxisLabel})
+		}
 	}
 	return points, nil
 }

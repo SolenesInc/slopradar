@@ -34,7 +34,7 @@ func runTrend(ctx context.Context, args []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	var commits []gitread.Commit
+	var commits []trendcalc.Commit
 	if options.merges != 0 {
 		commits, err = trendcalc.Merges(ctx, repository, head, options.merges)
 	} else {
