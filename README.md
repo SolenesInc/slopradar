@@ -30,6 +30,10 @@ generally easier to maintain, but duplication is not always wrong, and absolute
 erosion varies by language. [How slopradar analyzes code](docs/analysis.md) has the
 exact rules for each language.
 
+The mass and erosion model comes from the
+[SlopCodeBench paper (arXiv:2603.24755)](https://arxiv.org/abs/2603.24755) and
+Sebastian's [essay on measuring code sloppiness](https://earendil.com/posts/measuring-code-sloppiness/).
+
 ## Add it to a pull request
 
 Add `.github/workflows/slopradar.yml`:

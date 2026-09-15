@@ -13,7 +13,10 @@ function starts at CC 1, and each decision point listed under
 is the function's non-blank, non-comment source lines. Mass is CC × √SLOC, and
 erosion is the share of repository function mass in functions with CC over 10.
 The mass and erosion model, including the CC 10 threshold, comes from
-[SlopCodeBench (arXiv:2603.24755)](https://arxiv.org/abs/2603.24755).
+[SlopCodeBench (arXiv:2603.24755)](https://arxiv.org/abs/2603.24755). The
+analysis also builds on [scb-check](https://github.com/gabeorlanski/scb-check)
+and Sebastian's
+[essay on measuring code sloppiness](https://earendil.com/posts/measuring-code-sloppiness/).
 
 Functions nested inside another function are folded into the outer function's
 CC, SLOC, and mass. slopradar also keeps rows for nested functions so the report
