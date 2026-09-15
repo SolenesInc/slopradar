@@ -24,7 +24,8 @@ func TestMonthsSelectsMonthEndCommitsAndCurrentHead(t *testing.T) {
 	}{
 		{"2026-01-10T12:00:00Z", "jan"},
 		{"2026-01-20T12:00:00Z", "jan-late"},
-		{"2026-01-20T12:00:00Z", "jan-newest"},
+		{"2026-01-20T12:00:00Z", "jan-tied"},
+		{"2026-01-15T12:00:00Z", "jan-newest"},
 		{"2026-02-05T12:00:00Z", "feb"},
 		{"2026-03-05T12:00:00Z", "mar"},
 		{"2026-03-20T12:00:00Z", "head"},

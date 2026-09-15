@@ -3,7 +3,6 @@ package trend
 import (
 	"context"
 	"fmt"
-	"sort"
 	"time"
 
 	"github.com/SolenesInc/slopradar/internal/gitread"
@@ -45,32 +44,29 @@ func Months(ctx context.Context, repository *gitread.Repository, head string, co
 		return []Commit{}, nil
 	}
 	type datedCommit struct {
-		commit           gitread.Commit
-		date             time.Time
-		firstParentOrder int
+		commit gitread.Commit
+		date   time.Time
 	}
 	dated := make([]datedCommit, len(commits))
+	earliest := time.Time{}
 	for i, commit := range commits {
 		date, err := time.Parse(time.RFC3339, commit.Date)
 		if err != nil {
 			return nil, fmt.Errorf("parse commit date %q for %s: %w", commit.Date, commit.Rev, err)
 		}
-		dated[i] = datedCommit{commit: commit, date: date, firstParentOrder: i}
-	}
-	sort.Slice(dated, func(i, j int) bool {
-		if !dated[i].date.Equal(dated[j].date) {
-			return dated[i].date.Before(dated[j].date)
+		dated[i] = datedCommit{commit: commit, date: date}
+		if earliest.IsZero() || date.Before(earliest) {
+			earliest = date
 		}
-		return dated[i].firstParentOrder > dated[j].firstParentOrder
-	})
+	}
 	headCommit := commits[0]
 	headDate, err := time.Parse(time.RFC3339, headCommit.Date)
 	if err != nil {
 		return nil, fmt.Errorf("parse head date %q for %s: %w", headCommit.Date, headCommit.Rev, err)
 	}
 	currentBoundary := time.Date(headDate.UTC().Year(), headDate.UTC().Month(), 1, 0, 0, 0, 0, time.UTC)
-	earliest := dated[0].date.UTC()
-	availableMonths := (currentBoundary.Year()-earliest.Year())*12 + int(currentBoundary.Month()-earliest.Month()) + 1
+	earliestUTC := earliest.UTC()
+	availableMonths := (currentBoundary.Year()-earliestUTC.Year())*12 + int(currentBoundary.Month()-earliestUTC.Month()) + 1
 	availableMonths = max(availableMonths, 1)
 	boundaryCount := min(count, availableMonths)
 	firstBoundary := currentBoundary.AddDate(0, -(boundaryCount - 1), 0)
@@ -78,8 +74,7 @@ func Months(ctx context.Context, repository *gitread.Repository, head string, co
 	seen := map[string]int{}
 	for boundary := firstBoundary; !boundary.After(currentBoundary); boundary = boundary.AddDate(0, 1, 0) {
 		nextBoundary := boundary.AddDate(0, 1, 0)
-		for i := len(dated) - 1; i >= 0; i-- {
-			item := dated[i]
+		for _, item := range dated {
 			if !item.date.Before(nextBoundary) {
 				continue
 			}
