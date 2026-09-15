@@ -297,3 +297,19 @@ func assertMarkdownGolden(t *testing.T, name string, result model.Diff) {
 		t.Fatalf("%s differs\n%s", name, output.String())
 	}
 }
+
+func TestMarkdownTrendChartsScaleMermaidDefaults(t *testing.T) {
+	points := []model.TrendPoint{
+		{Rev: "a", Date: "2026-08-01T00:00:00Z", Buckets: map[model.Bucket]model.Totals{model.Source: {Erosion: 0.5}, model.Tests: {Erosion: 0.2}}},
+		{Rev: "b", Date: "2026-09-01T00:00:00Z", Buckets: map[model.Bucket]model.Totals{model.Source: {Erosion: 0.4}, model.Tests: {Erosion: 0.3}}},
+	}
+	result := model.Diff{Buckets: map[model.Bucket]model.BucketDelta{model.Source: {}, model.Tests: {}}, Trend: points}
+	var output strings.Builder
+	if err := WriteDiff(&output, "md", result, false); err != nil {
+		t.Fatal(err)
+	}
+	directive := "```mermaid\n%%{init: {\"xyChart\": {\"width\": 420, \"height\": 300}}}%%\nxychart-beta\n"
+	if got := strings.Count(output.String(), directive); got != 2 {
+		t.Fatalf("expected the size directive on both charts, found %d in\n%s", got, output.String())
+	}
+}
