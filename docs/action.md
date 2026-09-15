@@ -58,8 +58,9 @@ slopradar diff --base refs/remotes/origin/<base> --head HEAD --format md [--tren
 
 `diff` compares from the merge base of the two revisions, so commits already on
 the base branch do not appear in the report. With `trend-months`, the report
-ends with a chart of erosion by month for each bucket, source and tests, over
-the requested window, ending at the pull request head.
+ends with a chart of erosion by month for each bucket, source and tests, at
+the repository's state at each month's end over the requested window, ending
+at the pull request head.
 
 ## The comment
 
@@ -91,9 +92,10 @@ are covered by the [boundary tests](../scripts/report-bounds.test.cjs).
 
 ## Pinning
 
-`SolenesInc/slopradar@v0.1.0` pins the analyzer, so every run of a pull request
-uses the same rules and the same numbers. `SolenesInc/slopradar@main` follows
-the repository, so report changes land on the next run without a workflow
-edit. Either way the action builds from the pinned checkout; the standalone
-`go install` command in the [README](../README.md#command-line) stays versioned
-separately.
+`SolenesInc/slopradar@v0.1.0` selects a release. A tag can be moved, so a
+workflow that must run the same analyzer every time names the full commit SHA
+instead, as in `SolenesInc/slopradar@<sha>`. `SolenesInc/slopradar@main`
+follows the repository, so report changes land on the next run without a
+workflow edit. Either way the action builds from the selected checkout; the
+standalone `go install` command in the [README](../README.md#command-line) is
+versioned separately.

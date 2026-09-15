@@ -177,8 +177,9 @@ xychart-beta
 
 ## Command line
 
-Install with Go 1.27 or newer, cgo, and a C compiler. The module ships the
-native parser archives it needs, so there is no Rust or Node to install:
+slopradar supports Linux and macOS on arm64 and amd64. Install with Go 1.27
+or newer, cgo, and a C compiler. The module ships the native parser archives
+it needs, so there is no Rust or Node to install:
 
 ```sh
 go install github.com/SolenesInc/slopradar/cmd/slopradar@v0.1.0
@@ -195,7 +196,8 @@ slopradar trend --months 12
 Each takes `--format text|md|json` (`text` by default; `md` is what the Action
 posts) and `--no-cache`. `scan` accepts a revision or a directory and defaults
 to `HEAD`. `diff` compares from the merge base of its two revisions. `trend`
-walks first-parent history and takes `--months` or `--merges`.
+walks first-parent history and takes `--months`, one point per month at the
+repository's state at that month's end, or `--merges`.
 
 `slopradar diff` on the same pull request, as text:
 
