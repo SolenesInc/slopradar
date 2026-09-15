@@ -58,8 +58,8 @@ slopradar diff --base refs/remotes/origin/<base> --head HEAD --format md [--tren
 
 `diff` compares from the merge base of the two revisions, so commits already on
 the base branch do not appear in the report. With `trend-months`, the report
-ends with a chart of erosion by month for each bucket, source and tests, at
-each month end over the requested window, ending at the pull request head.
+ends with a chart of erosion by month for each bucket, source and tests, over
+the requested window, ending at the pull request head.
 
 ## The comment
 
