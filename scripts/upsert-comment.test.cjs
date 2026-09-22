@@ -9,35 +9,62 @@ const upsertComment = require("./upsert-comment.cjs")
 
 const runUrl = "https://github.com/SolenesInc/slopradar/actions/runs/1"
 
-function issueAPI() {
+const botAuthor = {__typename: "Bot", login: "github-actions"}
+
+function issueAPI({pageSize = Infinity} = {}) {
   const comments = []
+  const writes = []
+  let nextId = 1
   return {
     comments,
+    writes,
     github: {
-      paginate: async () => comments,
+      graphql: async (_query, {after}) => {
+        const start = after === null ? 0 : Number(after)
+        const end = Math.min(start + pageSize, comments.length)
+        return {
+          repository: {
+            pullRequest: {
+              headRefOid: "current-head",
+              comments: {
+                nodes: comments.slice(start, end),
+                pageInfo: {hasNextPage: end < comments.length, endCursor: String(end)},
+              },
+            },
+          },
+        }
+      },
       rest: {
-        pulls: {get: async () => ({data: {head: {sha: "current-head"}}})},
         issues: {
-          listComments: async () => ({data: comments}),
           createComment: async ({body}) => {
+            writes.push("create")
             const comment = {
-              id: "slopradar-comment",
+              databaseId: nextId++,
               body,
-              html_url: "https://example.invalid/comment",
-              user: {login: "github-actions[bot]", type: "Bot"},
+              url: "https://example.invalid/comment",
+              author: botAuthor,
             }
             comments.push(comment)
-            return {data: comment}
+            return {data: {html_url: comment.url}}
           },
           updateComment: async ({comment_id, body}) => {
-            const comment = comments.find(({id}) => id === comment_id)
+            writes.push("update")
+            const comment = comments.find(({databaseId}) => databaseId === comment_id)
             comment.body = body
-            return {data: comment}
+            return {data: {html_url: comment.url}}
           },
         },
       },
     },
   }
+}
+
+function writeReport(t, body) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "slopradar-comment-"))
+  t.after(() => fs.rmSync(directory, {recursive: true}))
+  const reportPath = path.join(directory, "report.md")
+  fs.writeFileSync(reportPath, body)
+  return reportPath
 }
 
 function pullRequestContext(headRepository = "SolenesInc/slopradar", author = "victor") {
@@ -55,8 +82,8 @@ test("preserves a human marker and creates then updates the bot marker", async (
   api.comments.push({
     id: "human-comment",
     body: "<!-- slopradar -->\nhuman-authored note\n",
-    html_url: "https://example.invalid/human-comment",
-    user: {login: "victor", type: "User"},
+    url: "https://example.invalid/human-comment",
+    author: {__typename: "User", login: "victor"},
   })
   const messages = []
   const core = {info: (message) => messages.push(message)}
@@ -186,4 +213,78 @@ test("stale runs neither create a duplicate nor overwrite the current report", a
   assert.equal(api.comments.length, 1)
   assert.equal(api.comments[0].body, "<!-- slopradar -->\ncurrent report\n")
   assert.equal(messages.filter((message) => message.includes("differs from current PR head")).length, 2)
+})
+
+test("updates a bot comment found beyond the first page instead of duplicating it", async (t) => {
+  const reportPath = writeReport(t, "<!-- slopradar -->\nnew report\n")
+  const api = issueAPI({pageSize: 2})
+  for (let index = 0; index < 5; index++) {
+    api.comments.push({databaseId: 100 + index, body: `review ${index}`, url: "https://example.invalid/review", author: botAuthor})
+  }
+  api.comments.push({databaseId: 200, body: "<!-- slopradar -->\nold report\n", url: "https://example.invalid/comment", author: botAuthor})
+
+  await upsertComment({github: api.github, context: pullRequestContext(), core: {info: () => {}}, reportPath, commentEnabled: "true"})
+
+  assert.equal(api.comments.length, 6)
+  assert.equal(api.comments[5].body, "<!-- slopradar -->\nnew report\n")
+  assert.deepEqual(api.writes, ["update"])
+})
+
+test("leaves an identical comment untouched", async (t) => {
+  const reportPath = writeReport(t, "<!-- slopradar -->\nreport\n")
+  const api = issueAPI()
+  const messages = []
+  const core = {info: (message) => messages.push(message)}
+
+  await upsertComment({github: api.github, context: pullRequestContext(), core, reportPath, commentEnabled: "true"})
+  await upsertComment({github: api.github, context: pullRequestContext(), core, reportPath, commentEnabled: "true"})
+
+  assert.deepEqual(api.writes, ["create"])
+  assert.equal(messages[1], "slopradar comment unchanged: https://example.invalid/comment")
+})
+
+test("warns instead of failing when the REST rate limit is exhausted", async (t) => {
+  const reportPath = writeReport(t, "<!-- slopradar -->\nreport\n")
+  const api = issueAPI()
+  api.github.rest.issues.createComment = async () => {
+    const error = new Error("API rate limit exceeded for installation.")
+    error.status = 403
+    throw error
+  }
+  const warnings = []
+
+  await upsertComment({
+    github: api.github,
+    context: pullRequestContext(),
+    core: {info: () => {}, warning: (message) => warnings.push(message)},
+    reportPath,
+    commentEnabled: "true",
+    runUrl,
+  })
+
+  assert.equal(warnings.length, 1)
+  assert.match(warnings[0], /rate limit is exhausted\. The report is in the job summary: https:\/\/github\.com\/SolenesInc\/slopradar\/actions\/runs\/1/)
+})
+
+test("warns instead of failing when the GraphQL rate limit is exhausted", async (t) => {
+  const reportPath = writeReport(t, "<!-- slopradar -->\nreport\n")
+  const api = issueAPI()
+  api.github.graphql = async () => {
+    const error = new Error("Request failed due to following response errors:\n - API rate limit exceeded for installation.")
+    error.errors = [{type: "RATE_LIMITED", message: "API rate limit exceeded for installation."}]
+    throw error
+  }
+  const warnings = []
+
+  await upsertComment({
+    github: api.github,
+    context: pullRequestContext(),
+    core: {info: () => {}, warning: (message) => warnings.push(message)},
+    reportPath,
+    commentEnabled: "true",
+    runUrl,
+  })
+
+  assert.deepEqual(api.writes, [])
+  assert.equal(warnings.length, 1)
 })
