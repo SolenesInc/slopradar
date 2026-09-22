@@ -73,7 +73,15 @@ push cannot overwrite a newer report with an older one.
 On a fork pull request, or a
 [Dependabot pull request whose token is read-only](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-on-actions#restrictions-when-dependabot-triggers-events),
 the action keeps the summary and says in the job log that it skipped the
-comment. Other API failures stay visible.
+comment. When the repository's `GITHUB_TOKEN`
+[rate limit](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api#primary-rate-limit-for-github_token-in-github-actions)
+is exhausted, the action keeps the summary and skips the comment with a
+warning, and the next push brings the comment up to date. Other API failures
+fail the job.
+
+Each run reads the pull request head and its comments in one GraphQL query
+and writes the comment only when its text changes, so a push that leaves the
+report unchanged spends no REST requests.
 
 ## Large reports
 

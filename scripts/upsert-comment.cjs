@@ -2,6 +2,44 @@ const fs = require("node:fs")
 
 const {commentForReport, githubCommentMaxUTF16CodeUnits, marker} = require("./report-bounds.cjs")
 
+const githubGraphQLMaxPageSize = 100
+
+const commentsQuery = `query($owner: String!, $repo: String!, $number: Int!, $pageSize: Int!, $after: String) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      headRefOid
+      comments(first: $pageSize, after: $after) {
+        nodes { databaseId url body author { __typename login } }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+  }
+}`
+
+function isSlopradarComment(comment) {
+  return comment.author?.__typename === "Bot" && comment.author.login === "github-actions" && comment.body.startsWith(marker)
+}
+
+async function findSlopradarComment(github, request) {
+  let after = null
+  for (;;) {
+    const {repository} = await github.graphql(commentsQuery, {...request, pageSize: githubGraphQLMaxPageSize, after})
+    const {headRefOid, comments} = repository.pullRequest
+    const existing = comments.nodes.find(isSlopradarComment)
+    if (existing || !comments.pageInfo.hasNextPage) {
+      return {head: headRefOid, existing}
+    }
+    after = comments.pageInfo.endCursor
+  }
+}
+
+function isRateLimited(error) {
+  if (error.errors?.some(({type}) => type === "RATE_LIMITED")) {
+    return true
+  }
+  return (error.status === 403 || error.status === 429) && /rate limit/i.test(error.message)
+}
+
 module.exports = async function upsertComment({
   github,
   context,
@@ -48,45 +86,51 @@ module.exports = async function upsertComment({
   }
   const body = bounded.body
 
+  const expectedHead = pullRequest.head?.sha
+  if (!expectedHead) {
+    throw new Error("pull request event does not identify its head SHA")
+  }
   const request = {
     owner: context.repo.owner,
     repo: context.repo.repo,
-    issue_number: pullRequest.number,
+    number: pullRequest.number,
   }
   try {
-    const comments = await github.paginate(github.rest.issues.listComments, request)
-    const existing = comments.find(
-      (comment) => comment.user?.login === "github-actions[bot]" && comment.body?.startsWith(marker),
-    )
-
-    const expectedHead = pullRequest.head?.sha
-    if (!expectedHead) {
-      throw new Error("pull request event does not identify its head SHA")
-    }
-    const current = await github.rest.pulls.get({
-      owner: request.owner,
-      repo: request.repo,
-      pull_number: pullRequest.number,
-    })
-    if (current.data.head.sha !== expectedHead) {
-      core.info(`slopradar comment skipped: report head ${expectedHead} differs from current PR head ${current.data.head.sha}`)
+    const {head, existing} = await findSlopradarComment(github, request)
+    if (head !== expectedHead) {
+      core.info(`slopradar comment skipped: report head ${expectedHead} differs from current PR head ${head}`)
       return
     }
 
+    if (existing?.body === body) {
+      core.info(`slopradar comment unchanged: ${existing.url}`)
+      return
+    }
     if (existing) {
       await github.rest.issues.updateComment({
         owner: request.owner,
         repo: request.repo,
-        comment_id: existing.id,
+        comment_id: existing.databaseId,
         body,
       })
-      core.info(`slopradar comment updated: ${existing.html_url}`)
+      core.info(`slopradar comment updated: ${existing.url}`)
       return
     }
 
-    const created = await github.rest.issues.createComment({...request, body})
+    const created = await github.rest.issues.createComment({
+      owner: request.owner,
+      repo: request.repo,
+      issue_number: request.number,
+      body,
+    })
     core.info(`slopradar comment created: ${created.data.html_url}`)
   } catch (error) {
+    if (isRateLimited(error)) {
+      core.warning(
+        `slopradar comment skipped: the GitHub API rate limit is exhausted. The report is in the job summary: ${runUrl}. ${error.message}`,
+      )
+      return
+    }
     const status = error.status ? ` HTTP ${error.status}` : ""
     throw new Error(
       `slopradar could not upsert the pull request comment.${status}; ensure the workflow grants pull-requests: write. ${error.message}`,
