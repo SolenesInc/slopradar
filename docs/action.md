@@ -79,9 +79,12 @@ is exhausted, the action keeps the summary and skips the comment with a
 warning, and the next push brings the comment up to date. Other API failures
 fail the job.
 
-Each run reads the pull request head and its comments in one GraphQL query
-and writes the comment only when its text changes, so a push that leaves the
-report unchanged spends no REST requests.
+Each run reads the pull request head and its comments through GraphQL, one
+query per page of 100 comments, the
+[largest page GitHub's GraphQL API allows](https://docs.github.com/en/graphql/overview/rate-limits-and-query-limits-for-the-graphql-api#node-limit),
+and stops at the page that holds the slopradar comment. It writes the comment
+only when its text changes, so a push that leaves the report unchanged spends
+no REST requests.
 
 ## Large reports
 
